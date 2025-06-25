@@ -24,7 +24,7 @@
 static const char *TAG = "WifiBoard";
 
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
-#define NERTC_BOARD_NAME "ChongChong"
+#define NERTC_BOARD_NAME "yunxin"
 #endif
 
 WifiBoard::WifiBoard() {
