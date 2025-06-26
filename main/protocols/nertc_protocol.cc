@@ -337,8 +337,8 @@ cJSON* NeRtcProtocol::BuildApplicationTtsStateProtocol(const std::string& event)
 
 cJSON* NeRtcProtocol::BuildApplicationIotVolumeProtocol(int volume) {
     cJSON* command = cJSON_CreateObject();
-    cJSON_AddStringToObject(command, "name", "Speaker");
-    cJSON_AddStringToObject(command, "method", "SetVolume");
+    cJSON_AddStringToObject(command, "name", "AudioSpeaker");
+    cJSON_AddStringToObject(command, "method", "set_volume");
     cJSON* parameters = cJSON_CreateObject();
     cJSON_AddNumberToObject(parameters, "volume", volume);
     cJSON_AddItemToObject(command, "parameters", parameters);
