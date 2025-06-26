@@ -397,6 +397,11 @@ void NeRtcProtocol::OnUserJoined(const nertc_sdk_callback_context_t* ctx, const 
     NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(ctx->user_data);
     if (!instance)
         return;
+
+    if (user.type == NERTC_SDK_USER_SIP) {
+        instance->phone_uid_ = user.uid;
+        ESP_LOGI(TAG, "OnUserJoined. phone uid:%llu", instance->phone_uid_);
+    }
 }
 
 void NeRtcProtocol::OnUserLeft(const nertc_sdk_callback_context_t* ctx, const nertc_sdk_user_info& user, int reason) {
@@ -405,6 +410,10 @@ void NeRtcProtocol::OnUserLeft(const nertc_sdk_callback_context_t* ctx, const ne
     NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(ctx->user_data);
     if (!instance)
         return;
+
+    if (instance->phone_call_start_ &&  user.uid != 0 &&  user.uid == instance->phone_uid_) {
+        instance->SipPhoneCallEnd();
+    }
 }
 
 void NeRtcProtocol::OnUserAudioStart(const nertc_sdk_callback_context_t* ctx, uint64_t uid, nertc_sdk_media_stream_e stream_type) {
@@ -479,6 +488,20 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
                 instance->CloseAudioChannel();
                 return;
             }
+        } else if (name == "call_sip_phone") {
+            cJSON* arguments_json = cJSON_Parse(arguments.c_str());
+            cJSON* phoneNumber_item = cJSON_GetObjectItem(arguments_json, "phoneNumber");
+            if (!phoneNumber_item || !cJSON_IsString(phoneNumber_item)) {
+                ESP_LOGE(TAG, "phoneNumber is null");
+                cJSON_Delete(arguments_json);
+                cJSON_Delete(data_json);
+                return;
+            }
+            std::string phone_number = phoneNumber_item->valuestring;
+            if (!phone_number.empty() && instance->SipPhoneCallStart(phone_number)) {
+                ESP_LOGI(TAG, "phone call start. stop ai");
+                nertc_stop_ai(instance->engine_);
+            }
         }
 
         cJSON_Delete(data_json);
@@ -516,12 +539,108 @@ bool NeRtcProtocol::SendText(const std::string& text) {
     }
     std::string type = type_item->valuestring;
     if (type == "abort") {
-        nertc_ai_manual_interrupt(engine_);
-        cJSON* state_json = BuildApplicationTtsStateProtocol("audio.agent.speech_stopped");
-        if (on_incoming_json_) on_incoming_json_(state_json);
-        cJSON_Delete(state_json);
+        if (phone_call_start_ && !phone_number_.empty()) {
+            SipPhoneCallEnd();
+        } else {
+            nertc_ai_manual_interrupt(engine_);
+            cJSON* state_json = BuildApplicationTtsStateProtocol("audio.agent.speech_stopped");
+            if (on_incoming_json_) on_incoming_json_(state_json);
+            cJSON_Delete(state_json);
+        }
     }
 
     cJSON_Delete(data_json);
+    return true;
+}
+
+bool NeRtcProtocol::SipPhoneCallStart(const std::string& phone_number) {
+    auto http = Board::GetInstance().CreateHttp();
+
+    std::string post_str = "{\"appKey\":\"" + std::string(CONFIG_NERTC_APPKEY) + "\","
+                           "\"sipCid\":\"" + cname_ + "\","
+                           "\"uid\":\"" + std::to_string(UID) + "\","
+                           "\"sipIp\":\"\","
+                           "\"type\":1,"
+                           "\"sipCalleeId\":\"" + phone_number + "\","
+                           "\"requestId\":\"" + std::to_string(esp_random()) + "\","
+                           "\"audio\":1,"
+                           "\"video\":0}";
+    ESP_LOGI(TAG, "SipPhoneCall post_str = %s\n", post_str.c_str());
+    http->SetHeader("Content-Type", "application/json");
+    http->SetContent(std::move(post_str));
+    if (!http->Open("POST", "http://111.124.203.149:10800/sipCallOut")) {
+        ESP_LOGE(TAG, "Failed to open HTTP connection");    
+        return false;
+    }
+
+    auto response = http->ReadAll();
+    http->Close();
+    delete http;    
+    cJSON* root = cJSON_Parse(response.c_str());
+    if (root == nullptr) {
+        ESP_LOGE(TAG, "Failed to parse JSON response: %s", response.c_str());
+        return false;
+    }
+    char* serialized = cJSON_PrintUnformatted(root);
+    ESP_LOGE(TAG, "SipPhoneCall res:%s", serialized);
+    free(serialized);
+
+    cJSON* code_item = cJSON_GetObjectItem(root, "code");
+    if (!code_item || !cJSON_IsNumber(code_item) || code_item->valueint != 200) {
+        ESP_LOGE(TAG, "Missing or invalid code in response");
+        cJSON_Delete(root);
+        return false;
+    }
+    phone_call_start_ = true;
+    phone_number_ = phone_number;
+    cJSON_Delete(root);
+
+    return true;
+}
+
+bool NeRtcProtocol::SipPhoneCallEnd() {
+    auto http = Board::GetInstance().CreateHttp();
+
+    std::string post_str = "{\"appKey\":\"" + std::string(CONFIG_NERTC_APPKEY) + "\","
+                           "\"sipCid\":\"" + cname_ + "\","
+                           "\"uid\":\"" + std::to_string(UID) + "\","
+                           "\"sipIp\":\"\","
+                           "\"type\":1,"
+                           "\"sipCalleeId\":\"" + phone_number_ + "\","
+                           "\"requestId\":\"" + std::to_string(esp_random()) + "\","
+                           "\"audio\":1,"
+                           "\"video\":0}";
+    ESP_LOGI(TAG, "sipCancelCallOut post_str = %s\n", post_str.c_str());
+    http->SetHeader("Content-Type", "application/json");
+    http->SetContent(std::move(post_str));
+    if (!http->Open("POST", "http://111.124.203.149:10800/sipCancelCallOut")) {
+        ESP_LOGE(TAG, "Failed to open HTTP connection");    
+        return false;
+    }
+
+    auto response = http->ReadAll();
+    http->Close();
+    delete http;    
+    cJSON* root = cJSON_Parse(response.c_str());
+    if (root == nullptr) {
+        ESP_LOGE(TAG, "Failed to parse JSON response: %s", response.c_str());
+        return false;
+    }
+    char* serialized = cJSON_PrintUnformatted(root);
+    ESP_LOGE(TAG, "sipCancelCallOut res:%s", serialized);
+    free(serialized);
+    cJSON_Delete(root);
+
+    phone_call_start_ = false;
+    phone_uid_ = 0;
+    phone_number_.clear();
+
+    ESP_LOGI(TAG, "phone end");
+    auto ret = nertc_start_ai(engine_);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Start AI failed, error: %d", ret);
+        return false;
+    }
+
     return true;
 }

@@ -49,8 +49,14 @@ private:
     esp_timer_handle_t asr_timer_ { nullptr };
     esp_timer_handle_t close_timer_ { nullptr };
 
+    bool phone_call_start_ { false }; // flag to indicate if phone call is in progress
+    uint64_t phone_uid_ { 0 }; // SIP phone UID
+    std::string phone_number_;
 private:
     bool SendText(const std::string& text) override;
+
+    bool SipPhoneCallStart(const std::string& phone_number);
+    bool SipPhoneCallEnd();
 };
 
 #endif
