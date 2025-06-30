@@ -93,7 +93,7 @@ NeRtcProtocol::~NeRtcProtocol() {
     }
 
     if (engine_) {
-        nertcrtc_destory_engine(engine_);
+        nertc_destory_engine(engine_);
         engine_ = nullptr;
     }
 }
