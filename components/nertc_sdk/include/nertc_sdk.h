@@ -29,7 +29,7 @@ NERTC_SDK_API nertc_sdk_engine_t nertc_create_engine(const nertc_sdk_config_t *c
  * @brief 销毁引擎实例
  * @param engine 通过nertc_create_engine创建的引擎实例
  */
-NERTC_SDK_API void nertcrtc_destory_engine(nertc_sdk_engine_t engine);
+NERTC_SDK_API void nertc_destory_engine(nertc_sdk_engine_t engine);
 
 /**
  * @brief 初始化引擎实例
