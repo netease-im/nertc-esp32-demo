@@ -29,7 +29,7 @@ NERTC_SDK_API nertc_sdk_engine_t nertc_create_engine(const nertc_sdk_config_t *c
  * @brief 销毁引擎实例
  * @param engine 通过nertc_create_engine创建的引擎实例
  */
-NERTC_SDK_API void nertcrtc_destory_engine(nertc_sdk_engine_t engine);
+NERTC_SDK_API void nertc_destory_engine(nertc_sdk_engine_t engine);
 
 /**
  * @brief 初始化引擎实例
@@ -40,16 +40,6 @@ NERTC_SDK_API void nertcrtc_destory_engine(nertc_sdk_engine_t engine);
  *         - 非0：失败 <br>
  */
 NERTC_SDK_API int nertc_init(nertc_sdk_engine_t engine);
-
-/**
- * @brief 初始化引擎实例
- * @note  创建引擎实例之后调用的第一个方法，仅能被初始化一次
- * @return 方法调用结果：<br>
- *         -  0：成功 <br>
- *         - 非0：失败 <br>
- */
-NERTC_SDK_API int nertc_get_(nertc_sdk_engine_t engine);
-
 
 /**
  * @brief 加入房间
