@@ -122,6 +122,14 @@ NeRtcProtocol::NeRtcProtocol() {
     nertc_sdk_config.optional_config.enable_server_aec = false;
 #endif
     nertc_sdk_config.optional_config.custom_config = CONFIG_NERTC_CUSTOM_SETTING;
+    
+    if (Board::GetInstance().GetBoardType() == "ml307") { //4G模组，需要外部网络IO
+        NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
+        nertc_sdk_config.optional_config.net_vtable = ext_net->GetVTable();
+    } else {
+        nertc_sdk_config.optional_config.net_vtable = nullptr;
+    }
+
     nertc_sdk_config.log_cfg.log_level = NERTC_SDK_LOG_INFO;
     nertc_sdk_config.licence_cfg.license = local_license_config.empty() ? NERTC_DEFAULT_TEST_LICENSE : local_license_config.c_str();
     nertc_sdk_config.user_data = this;

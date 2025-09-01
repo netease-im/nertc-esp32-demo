@@ -53,6 +53,7 @@ public:
     virtual WebSocket* CreateWebSocket() override;
     virtual Mqtt* CreateMqtt() override;
     virtual Udp* CreateUdp() override;
+    virtual Transport* CreateTcp(bool tls) override;
     virtual const char* GetNetworkStateIcon() override;
     virtual void SetPowerSaveMode(bool enabled) override;
     virtual std::string GetBoardJson() override;

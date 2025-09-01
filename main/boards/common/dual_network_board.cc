@@ -88,6 +88,10 @@ Udp* DualNetworkBoard::CreateUdp() {
     return current_board_->CreateUdp();
 }
 
+Transport* DualNetworkBoard::CreateTcp(bool tls) {
+    return current_board_->CreateTcp(tls);
+}
+
 const char* DualNetworkBoard::GetNetworkStateIcon() {
     return current_board_->GetNetworkStateIcon();
 }

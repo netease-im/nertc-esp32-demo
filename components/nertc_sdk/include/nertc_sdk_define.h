@@ -2,6 +2,7 @@
 #define __NERTC_SDK_DEFINE_H__
 
 #include <stdint.h>
+#include "nertc_sdk_ext_net.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,7 +68,8 @@ typedef enum {
 typedef struct nertc_sdk_optional_config {
   nertc_sdk_device_level_e device_performance_level;
   bool enable_server_aec;
-  char* custom_config;
+  char* custom_config; 
+  NetworkInterfaceVTable* net_vtable; // 用户自定义的网络接口
 } nertc_sdk_optional_config_t;
 
 typedef struct nertc_sdk_licence_config {

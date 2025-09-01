@@ -83,6 +83,10 @@ Udp* Ml307Board::CreateUdp() {
     return new Ml307Udp(modem_, 0);
 }
 
+Transport* Ml307Board::CreateTcp(bool) {
+    return new Ml307SslTransport(modem_, 1);
+}
+
 const char* Ml307Board::GetNetworkStateIcon() {
     if (!modem_.network_ready()) {
         return FONT_AWESOME_SIGNAL_OFF;
@@ -108,6 +112,9 @@ std::string Ml307Board::GetBoardJson() {
     // Set the board type for OTA
     std::string board_json = std::string("{\"type\":\"" BOARD_TYPE "\",");
     board_json += "\"name\":\"" BOARD_NAME "\",";
+#ifdef CONFIG_CONNECTION_TYPE_NERTC
+    board_json += "\"nertc_board_name\":\"" + std::string(NERTC_BOARD_NAME) + "-" + modem_.GetImei() + "\",";
+#endif
     board_json += "\"revision\":\"" + modem_.GetModuleName() + "\",";
     board_json += "\"carrier\":\"" + modem_.GetCarrierName() + "\",";
     board_json += "\"csq\":\"" + std::to_string(modem_.GetCsq()) + "\",";

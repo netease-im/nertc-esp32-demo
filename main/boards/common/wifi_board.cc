@@ -27,10 +27,6 @@ static const char *TAG = "WifiBoard";
 #include "blufi/blufi_wifi.h"
 #endif
 
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-#define NERTC_BOARD_NAME "yunxin"
-#endif
-
 WifiBoard::WifiBoard() {
     Settings settings("wifi", true);
     wifi_config_mode_ = settings.GetInt("force_ap") == 1;
@@ -172,6 +168,14 @@ Mqtt* WifiBoard::CreateMqtt() {
 
 Udp* WifiBoard::CreateUdp() {
     return new EspUdp();
+}
+
+Transport* WifiBoard::CreateTcp(bool tls) {
+    if (tls) {
+        return new TlsTransport();
+    } else {
+        return new TcpTransport();
+    }
 }
 
 const char* WifiBoard::GetNetworkStateIcon() {

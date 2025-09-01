@@ -57,6 +57,9 @@ enum DeviceState {
 #endif
 #define MAX_AUDIO_PACKETS_IN_QUEUE (2400 / OPUS_FRAME_DURATION_MS)
 
+#ifdef CONFIG_CONNECTION_TYPE_NERTC
+#define NERTC_BOARD_NAME "yunxin"
+#endif
 class Application {
 public:
     static Application& GetInstance() {
