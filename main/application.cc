@@ -2,7 +2,6 @@
 #include "board.h"
 #include "display.h"
 #include "system_info.h"
-#include "ml307_ssl_transport.h"
 #include "audio_codec.h"
 #include "mqtt_protocol.h"
 #include "websocket_protocol.h"
@@ -24,7 +23,11 @@
 #if CONFIG_USE_AFE_WAKE_WORD
 #include "afe_wake_word.h"
 #elif CONFIG_USE_AFE_NERTC_WAKE_WORD
-#include "nertc_afe_wake_word.h"
+    #if CONFIG_BOARD_TYPE_LICHUANG_DEV
+        #include "afe_wake_word.h"
+    #else
+        #include "nertc_afe_wake_word.h"
+    #endif
 #elif CONFIG_USE_ESP_WAKE_WORD
 #include "esp_wake_word.h"
 #else
@@ -76,13 +79,18 @@ Application::Application() {
 #if CONFIG_USE_AFE_WAKE_WORD
     wake_word_ = std::make_unique<AfeWakeWord>();
 #elif CONFIG_USE_AFE_NERTC_WAKE_WORD
+#if CONFIG_BOARD_TYPE_LICHUANG_DEV
+    wake_word_ = std::make_unique<AfeWakeWord>();
+#else
     wake_word_ = std::make_unique<NertcAfeWakeWord>();
+#endif
 #elif CONFIG_USE_ESP_WAKE_WORD
     wake_word_ = std::make_unique<EspWakeWord>();
 #else
     wake_word_ = std::make_unique<NoWakeWord>();
 #endif
 
+    buffer_ = new char[1024];
     esp_timer_create_args_t clock_timer_args = {
         .callback = [](void* arg) {
             Application* app = (Application*)arg;
@@ -100,6 +108,10 @@ Application::~Application() {
     if (clock_timer_handle_ != nullptr) {
         esp_timer_stop(clock_timer_handle_);
         esp_timer_delete(clock_timer_handle_);
+    }
+    if (buffer_) {
+        delete[] buffer_;
+        buffer_ = nullptr;
     }
     if (background_task_ != nullptr) {
         delete background_task_;
@@ -279,6 +291,16 @@ void Application::PlaySound(const std::string_view& sound) {
     }
     background_task_->WaitForCompletion();
 
+    for (int i = 0; i < 2; ++i)  
+    {
+        AudioStreamPacket packet;
+        packet.sample_rate = 16000;
+        packet.frame_duration = 60;
+        std::lock_guard<std::mutex> lock(mutex_);
+        audio_decode_queue_.emplace_back(std::move(packet));
+    }
+
+
     const char* data = sound.data();
     size_t size = sound.size();
     for (const char* p = data; p < data + size; ) {
@@ -316,6 +338,7 @@ void Application::ToggleChatState() {
                 if (!protocol_->OpenAudioChannel()) {
                     return;
                 }
+                ai_sleep_ = false;
             }
 
             SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
@@ -349,6 +372,7 @@ void Application::StartListening() {
                 if (!protocol_->OpenAudioChannel()) {
                     return;
                 }
+                ai_sleep_ = false;
             }
 
             SetListeningMode(kListeningModeManualStop);
@@ -572,6 +596,10 @@ void Application::Start() {
                     Schedule([this]() {
                         Reboot();
                     });
+                } else if (strcmp(command->valuestring, "sleep") == 0) {
+                    Schedule([this]() {
+                        ai_sleep_ = true;
+                    });
                 } else {
                     ESP_LOGW(TAG, "Unknown system command: %s", command->valuestring);
                 }
@@ -682,6 +710,7 @@ void Application::Start() {
                         wake_word_->StartDetection();
                         return;
                     }
+                    ai_sleep_ = false;
                 }
 
                 ESP_LOGI(TAG, "Wake word detected: %s", wake_word.c_str());
@@ -722,11 +751,7 @@ void Application::Start() {
         display->SetChatMessage("system", "");
         // Play the success sound to indicate the device is ready
         ResetDecoder();
-        PlaySound(Lang::Sounds::P3_SUCCESS);
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-        if (audio_debugger_)
-            audio_debugger_->SendAudioInfo(protocol_->server_sample_rate(), 1);
-#endif
+        PlaySound(Lang::Sounds::P3_AGENT);
     }
 
     // Print heap stats
@@ -760,6 +785,26 @@ void Application::OnClockTimer() {
                 });
             }
         }
+#ifdef CONFIG_DEBUG_RUNTIME_STATS
+        memset(buffer_, 0, 1024);
+        // 获取运行时间统计信息
+        vTaskGetRunTimeStats(buffer_);
+
+        // 打印统计信息
+        printf("Runtime Stats (Task Name, Runtime Abs, Runtime %%):\n");
+        printf("%s", buffer_);
+        printf("**********************************************\n");
+#endif
+    }
+
+    if (ai_sleep_ && (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening)) {
+        Schedule([this]() {
+            ESP_LOGI(TAG, "AI sleep mode, close the audio channel");
+            if (protocol_) {
+                protocol_->CloseAudioChannel();
+            }
+            ai_sleep_ = false;
+        });
     }
 }
 
@@ -906,7 +951,9 @@ void Application::OnAudioOutput() {
 
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
 void Application::OnNertcAudioOutput(AudioStreamPacket&& packet) {
-    if (busy_decoding_audio_) {
+    int count = nertc_audio_output_task_count_;
+    if (count > 5) {
+        ESP_LOGW(TAG, "OnNertcAudioOutput task count:%d", count);
         return;
     }
 
@@ -917,9 +964,9 @@ void Application::OnNertcAudioOutput(AudioStreamPacket&& packet) {
     // Synchronize the sample rate and frame duration
     SetDecodeSampleRate(packet.sample_rate, packet.frame_duration);
 
-    busy_decoding_audio_ = true;
+    nertc_audio_output_task_count_++;
     background_task_->Schedule([this, codec, packet = std::move(packet)]() mutable {
-        busy_decoding_audio_ = false;
+        nertc_audio_output_task_count_--;
         if (aborted_) {
             return;
         }
@@ -943,8 +990,9 @@ void Application::OnNertcAudioOutput(AudioStreamPacket&& packet) {
             } else {
                 reference_packet.pcm_payload = pcm;
             }
-
             reference_packet.sample_rate = protocol_->server_sample_rate();
+            reference_packet.timestamp = packet.timestamp;
+            //ESP_LOGI("test", "OnNertcAudioOutput, timestamp: %d, size: %d", (int)packet.timestamp, (int)packet.payload.size());
             protocol_->SendAecReferenceAudio(reference_packet);
         }
 #endif
@@ -979,7 +1027,7 @@ void Application::OnAudioInput() {
     }
     if (audio_processor_->IsRunning()) {
         std::vector<int16_t> data;
-#if defined(CONFIG_CONNECTION_TYPE_NERTC) && defined(CONFIG_USE_NERTC_SERVER_AEC)
+#if defined(CONFIG_CONNECTION_TYPE_NERTC) && defined(CONFIG_USE_NERTC_SERVER_AEC) && !defined(CONFIG_USE_AUDIO_PROCESSOR) 
         int samples = protocol_->samples_per_channel();
         int sample_rate = protocol_->server_sample_rate();
 #else
@@ -1009,20 +1057,35 @@ bool Application::ReadAudio(std::vector<int16_t>& data, int sample_rate, int sam
             return false;
         }
         if (codec->input_channels() == 2) {
-            auto mic_channel = std::vector<int16_t>(data.size() / 2);
-            auto reference_channel = std::vector<int16_t>(data.size() / 2);
-            for (size_t i = 0, j = 0; i < mic_channel.size(); ++i, j += 2) {
-                mic_channel[i] = data[j];
-                reference_channel[i] = data[j + 1];
-            }
-            auto resampled_mic = std::vector<int16_t>(input_resampler_.GetOutputSamples(mic_channel.size()));
-            auto resampled_reference = std::vector<int16_t>(reference_resampler_.GetOutputSamples(reference_channel.size()));
-            input_resampler_.Process(mic_channel.data(), mic_channel.size(), resampled_mic.data());
-            reference_resampler_.Process(reference_channel.data(), reference_channel.size(), resampled_reference.data());
-            data.resize(resampled_mic.size() + resampled_reference.size());
-            for (size_t i = 0, j = 0; i < resampled_mic.size(); ++i, j += 2) {
-                data[j] = resampled_mic[i];
-                data[j + 1] = resampled_reference[i];
+#if CONFIG_AUD_MIC_DUAL_NO_REF
+            if (!wake_word_ || !wake_word_->IsDetectionRunning()) {
+                auto mic_channel = std::vector<int16_t>(data.size() / 2);
+                for (size_t i = 0, j = 0; i < mic_channel.size(); ++i, j += 2) {
+                    int mic = data[j];
+                    mic += data[j + 1];
+                    mic_channel[i] = mic / 2;
+                }
+                auto resampled_mic = std::vector<int16_t>(input_resampler_.GetOutputSamples(mic_channel.size()));
+                input_resampler_.Process(mic_channel.data(), mic_channel.size(), resampled_mic.data());
+                data = std::move(resampled_mic);
+            } else
+#endif
+            {
+                auto mic_channel = std::vector<int16_t>(data.size() / 2);
+                auto reference_channel = std::vector<int16_t>(data.size() / 2);
+                for (size_t i = 0, j = 0; i < mic_channel.size(); ++i, j += 2) {
+                    mic_channel[i] = data[j];
+                    reference_channel[i] = data[j + 1];
+                }
+                auto resampled_mic = std::vector<int16_t>(input_resampler_.GetOutputSamples(mic_channel.size()));
+                auto resampled_reference = std::vector<int16_t>(reference_resampler_.GetOutputSamples(reference_channel.size()));
+                input_resampler_.Process(mic_channel.data(), mic_channel.size(), resampled_mic.data());
+                reference_resampler_.Process(reference_channel.data(), reference_channel.size(), resampled_reference.data());
+                data.resize(resampled_mic.size() + resampled_reference.size());
+                for (size_t i = 0, j = 0; i < resampled_mic.size(); ++i, j += 2) {
+                    data[j] = resampled_mic[i];
+                    data[j + 1] = resampled_reference[i];
+                }
             }
         } else {
             auto resampled = std::vector<int16_t>(input_resampler_.GetOutputSamples(data.size()));
@@ -1037,11 +1100,7 @@ bool Application::ReadAudio(std::vector<int16_t>& data, int sample_rate, int sam
     }
     
     // 音频调试：发送原始音频数据
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-    if (audio_debugger_ && protocol_ && protocol_->IsAudioChannelOpened()) {
-#else
     if (audio_debugger_) {
-#endif
         audio_debugger_->Feed(data);
     }
     
@@ -1279,4 +1338,20 @@ void Application::SetAecMode(AecMode mode) {
             protocol_->CloseAudioChannel();
         }
     });
+}
+
+void Application::TouchActive(int value_head, int value_body) {
+#if defined(CONFIG_CONNECTION_TYPE_NERTC)
+    if (device_state_ == kDeviceStateListening || device_state_ == kDeviceStateSpeaking) {
+        if (value_head > 31000 && touch_count_ == 0) {
+            touch_count_ = 10;
+            protocol_->SendMcpMessage("正在抚摸你的头，请提供相关的情绪价值，回答");
+        } else if (value_body > 31000 && touch_count_ == 0) {
+            touch_count_ = 10;
+            protocol_->SendMcpMessage("正在抚摸你的身体，请提供相关的情绪价值，回答");
+        } else if (touch_count_ > 0) {
+            touch_count_--;
+        }
+    }
+#endif
 }

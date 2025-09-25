@@ -1,5 +1,5 @@
-#ifndef NETWORK_C_INTERFACE_H
-#define NETWORK_C_INTERFACE_H
+#ifndef __NERTC_SDK_EXT_NET_H__
+#define __NERTC_SDK_EXT_NET_H__
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -11,74 +11,74 @@ extern "C" {
 #endif
 
 // 通用类型定义
-typedef void* HttpHandle;
-typedef void* TcpHandle;
-typedef void* UdpHandle;
+typedef void* http_handle;
+typedef void* tcp_handle;
+typedef void* udp_handle;
 
 // HTTP 接口函数指针类型 全部是同步函数
-typedef HttpHandle (*HttpCreateFunc)();
-typedef void (*HttpDestroyFunc)(HttpHandle handle);
-typedef void (*HttpSetHeaderFunc)(HttpHandle handle, const char* key, const char* value);
-typedef bool (*HttpOpenFunc)(HttpHandle handle, const char* method, const char* url, const char* content, size_t length);
-typedef void (*HttpCloseFunc)(HttpHandle handle);
-typedef int (*HttpGetStatusCodeFunc)(HttpHandle handle);
-typedef const char* (*HttpGetResponseHeaderFunc)(HttpHandle handle, const char* key);
-typedef size_t (*HttpGetBodyLengthFunc)(HttpHandle handle);
-typedef size_t (*HttpGetBodyFunc)(HttpHandle handle, char* buffer, size_t buffer_size);
+typedef http_handle (*http_create_func)();
+typedef void (*http_destroy_func)(http_handle handle);
+typedef void (*http_set_header_func)(http_handle handle, const char* key, const char* value);
+typedef bool (*http_open_func)(http_handle handle, const char* method, const char* url, const char* content, size_t length);
+typedef void (*http_close_func)(http_handle handle);
+typedef int (*http_get_status_code_func)(http_handle handle);
+typedef const char* (*http_get_response_header_func)(http_handle handle, const char* key);
+typedef size_t (*http_get_body_length_func)(http_handle handle);
+typedef size_t (*http_get_body_func)(http_handle handle, char* buffer, size_t buffer_size);
 
 // TCP 接口函数指针类型
-typedef TcpHandle (*TcpCreateFunc)();
-typedef void (*TcpSetSocketOpt)(TcpHandle handle, int timeout, int nonblocking);
-typedef void (*TcpDestroyFunc)(TcpHandle handle);
-typedef bool (*TcpConnectFunc)(TcpHandle handle, const char* host, int port);
-typedef void (*TcpDisconnectFunc)(TcpHandle handle);
-typedef int (*TcpSendFunc)(TcpHandle handle, const char* data, size_t length);
-typedef int (*TcpRecvFunc)(TcpHandle handle, char* buffer, size_t buffer_size);
+typedef tcp_handle (*tcp_create_func)();
+typedef void (*tcp_set_socket_opt_func)(tcp_handle handle, int timeout, int nonblocking);
+typedef void (*tcp_destroy_func)(tcp_handle handle);
+typedef bool (*tcp_connect_func)(tcp_handle handle, const char* host, int port);
+typedef void (*tcp_disconnect_func)(tcp_handle handle);
+typedef int (*tcp_send_func)(tcp_handle handle, const char* data, size_t length);
+typedef int (*tcp_recv_func)(tcp_handle handle, char* buffer, size_t buffer_size);
 
 // UDP 接口函数指针类型
-typedef UdpHandle (*UdpCreateFunc)();
-typedef void (*UdpSetSocketOpt)(UdpHandle handle, int timeout, int nonblocking);
-typedef void (*UdpDestroyFunc)(UdpHandle handle);
-typedef bool (*UdpConnectFunc)(UdpHandle handle, const char* host, int port);
-typedef void (*UdpDisconnectFunc)(UdpHandle handle);
-typedef int (*UdpSendFunc)(UdpHandle handle, const char* data, size_t length);
-typedef int (*UdpRecvFunc)(UdpHandle handle, char* buffer, size_t buffer_size);
+typedef udp_handle (*udp_create_func)();
+typedef void (*udp_set_socket_opt_func)(udp_handle handle, int timeout, int nonblocking);
+typedef void (*udp_destroy_func)(udp_handle handle);
+typedef bool (*udp_connect_func)(udp_handle handle, const char* host, int port);
+typedef void (*udp_disconnect_func)(udp_handle handle);
+typedef int (*udp_send_func)(udp_handle handle, const char* data, size_t length);
+typedef int (*udp_recv_func)(udp_handle handle, char* buffer, size_t buffer_size);
 
 // 网络接口函数表
 typedef struct {
     // HTTP 相关函数指针
-    HttpCreateFunc create_http;
-    HttpDestroyFunc destroy_http;
-    HttpSetHeaderFunc set_header;
-    HttpOpenFunc open;
-    HttpCloseFunc close;
-    HttpGetStatusCodeFunc get_status_code;
-    HttpGetResponseHeaderFunc get_response_header;
-    HttpGetBodyLengthFunc get_body_length;
-    HttpGetBodyFunc get_body;
+    http_create_func create_http;
+    http_destroy_func destroy_http;
+    http_set_header_func set_header;
+    http_open_func open;
+    http_close_func close;
+    http_get_status_code_func get_status_code;
+    http_get_response_header_func get_response_header;
+    http_get_body_length_func get_body_length;
+    http_get_body_func get_body;
 
     // TCP 相关函数指针
-    TcpCreateFunc create_tcp;
-    TcpSetSocketOpt set_socket_opt_tcp;
-    TcpDestroyFunc destroy_tcp;
-    TcpConnectFunc connect_tcp;
-    TcpDisconnectFunc disconnect_tcp;
-    TcpSendFunc send_tcp;
-    TcpRecvFunc recv_tcp;
+    tcp_create_func create_tcp;
+    tcp_set_socket_opt_func set_socket_opt_tcp;
+    tcp_destroy_func destroy_tcp;
+    tcp_connect_func connect_tcp;
+    tcp_disconnect_func disconnect_tcp;
+    tcp_send_func send_tcp;
+    tcp_recv_func recv_tcp;
 
     // UDP 相关函数指针
-    UdpCreateFunc create_udp;
-    UdpSetSocketOpt set_socket_opt_udp;
-    UdpDestroyFunc destroy_udp;
-    UdpConnectFunc connect_udp;
-    UdpDisconnectFunc disconnect_udp;
-    UdpSendFunc send_udp;
-    UdpRecvFunc recv_udp;
+    udp_create_func create_udp;
+    udp_set_socket_opt_func set_socket_opt_udp;
+    udp_destroy_func destroy_udp;
+    udp_connect_func connect_udp;
+    udp_disconnect_func disconnect_udp;
+    udp_send_func send_udp;
+    udp_recv_func recv_udp;
 
-} NetworkInterfaceVTable;
+} nertc_sdk_ext_net_handle_t;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // NETWORK_C_INTERFACE_H
+#endif // __NERTC_SDK_EXT_NET_H__

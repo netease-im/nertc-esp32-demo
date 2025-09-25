@@ -4,8 +4,6 @@
 #include "settings.h"
 
 #include <esp_log.h>
-#include <ml307_mqtt.h>
-#include <ml307_udp.h>
 #include <cstring>
 #include <arpa/inet.h>
 #include "assets/lang_config.h"
@@ -18,12 +16,6 @@ MqttProtocol::MqttProtocol() {
 
 MqttProtocol::~MqttProtocol() {
     ESP_LOGI(TAG, "MqttProtocol deinit");
-    if (udp_ != nullptr) {
-        delete udp_;
-    }
-    if (mqtt_ != nullptr) {
-        delete mqtt_;
-    }
     vEventGroupDelete(event_group_handle_);
 }
 
@@ -34,7 +26,7 @@ bool MqttProtocol::Start() {
 bool MqttProtocol::StartMqttClient(bool report_error) {
     if (mqtt_ != nullptr) {
         ESP_LOGW(TAG, "Mqtt client already started");
-        delete mqtt_;
+        mqtt_.reset();
     }
 
     Settings settings("mqtt", false);
@@ -52,7 +44,8 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
         return false;
     }
 
-    mqtt_ = Board::GetInstance().CreateMqtt();
+    auto network = Board::GetInstance().GetNetwork();
+    mqtt_ = network->CreateMqtt(0);
     mqtt_->SetKeepAlive(90);
 
     mqtt_->OnDisconnected([this]() {
@@ -150,10 +143,7 @@ bool MqttProtocol::SendAudio(const AudioStreamPacket& packet) {
 void MqttProtocol::CloseAudioChannel() {
     {
         std::lock_guard<std::mutex> lock(channel_mutex_);
-        if (udp_ != nullptr) {
-            delete udp_;
-            udp_ = nullptr;
-        }
+        udp_.reset();
     }
 
     std::string message = "{";
@@ -193,10 +183,8 @@ bool MqttProtocol::OpenAudioChannel() {
     }
 
     std::lock_guard<std::mutex> lock(channel_mutex_);
-    if (udp_ != nullptr) {
-        delete udp_;
-    }
-    udp_ = Board::GetInstance().CreateUdp();
+    auto network = Board::GetInstance().GetNetwork();
+    udp_ = network->CreateUdp(2);
     udp_->OnMessage([this](const std::string& data) {
         /*
          * UDP Encrypted OPUS Packet Format:

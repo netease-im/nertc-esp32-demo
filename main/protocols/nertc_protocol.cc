@@ -1,6 +1,7 @@
 #include <string>
 #include <cstring>
 #include "nertc_protocol.h"
+#include "nertc_external_network.h"
 #include "board.h"
 #include "system_info.h"
 #include <esp_random.h>
@@ -22,20 +23,31 @@
 #define JOIN_EVENT (1 << 0)
 
 #define NERTC_DEFAULT_TEST_LICENSE "eyJhbGdvcml0aG0iOiJkZWZhdWx0IiwiY3JlZGVudGlhbCI6eyJhY3RpdmF0ZURhdGUiOjE3NTYzODM4OTksImV4cGlyZURhdGUiOjE3NTkwNjIyOTksImxpY2Vuc2VLZXkiOiJ5dW54aW5Db21tb25UZXN0Iiwibm9uY2UiOiI5dE9OaExnUWlVQSJ9LCJzaWduYXR1cmUiOiJKSWtmVnVNSWx2VXJMUDlXK2puZlpTY3VuRWpkMnZibGhEYWpSM1I2UWF0eU0rZjhCQ0V4Z3ZkYzlFazlRMUswQm00SUhXNHRXdEswOHVEZTRQUWgxZ1FubVBJbDVIcUh0dGtSZGlZQS9KQUVLZU1LZ3luRmt6MXBVUWhtSkR6VHFpYU1qQWNkOTBBN0pIVlprNE9YcStQR2twenZrRk52VHAvQ3Q0VlNCRlRyMkY0TDFBRVJHR2xIQU95TFBORTU4TUVKeWZwWlRHYnJHeS9Ed3BMU1EzN0FnaWhzNEh4NmVlelRoZHJ4dUFRWmZKMGJUVktjSVVpTHJPRnBWZ2xVTkdBY3pKY1N3L05ZOVBvRS9yMzdaYWdid3dNUXcydXN3S1JNZGE2RDc0bjg0dHBEZkswZ285Smd2VWE1SFliLzN5U2wrZG1nWXFIa3FnQy9QcE5KM2c9PSIsInZlcnNpb24iOiIxLjAifQ=="
-
+std::string NeRtcProtocol::config_file_path_ = "/spiffs/config.json";
 NeRtcProtocol::NeRtcProtocol() {
     ESP_LOGI(TAG, "Start create: Free: %u minimal: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
 
     int local_frame_duration_config = 0;
     std::string local_license_config;
+    std::string custom_config_string;
 #if NERTC_ENABLE_CONFIG_FILE
-    if (!MountFileSystem()) {
+    if (!NeRtcProtocol::MountFileSystem()) {
         ESP_LOGE(TAG, "Failed to initialize file system");
         return;
     }
 
-    auto* config_json = ReadConfigJson();
+    auto* config_json = NeRtcProtocol::ReadConfigJson();
     if(config_json) {
+        cJSON* appkey = cJSON_GetObjectItem(config_json, "appkey");
+        if (appkey && cJSON_IsString(appkey)) {
+            ESP_LOGI(TAG, "local config set appkey to %s", appkey->valuestring);
+            local_config_appkey_ = appkey->valuestring;
+        }
+        cJSON* custom_config = cJSON_GetObjectItem(config_json, "custom_config");
+        if (custom_config && cJSON_IsObject(custom_config)) {
+            custom_config_string = cJSON_Print(custom_config);
+            ESP_LOGI(TAG, "local config set custom_config to %s", custom_config_string.c_str());
+        }
         cJSON* audio_config = cJSON_GetObjectItem(config_json, "audio_config");
         if (audio_config) {
             cJSON* frame_size = cJSON_GetObjectItem(audio_config, "frame_size");
@@ -52,35 +64,17 @@ NeRtcProtocol::NeRtcProtocol() {
                 ESP_LOGI(TAG, "local license config, size: %d", local_license_config.size());
             }
         }
-        cJSON_Delete(config_json);
+    }
+    else{
+        ESP_LOGE(TAG, "No local config file");
     }
 #endif
 
-    cJSON* root = cJSON_Parse(Board::GetInstance().GetJson().c_str());
-    if (!root) {
-        ESP_LOGE(TAG, "Failed to parse JSON broad_info");
-        return;
-    }
+    std::string device_id = Board::GetInstance().GetBoardName();
+    ESP_LOGI(TAG, "Start create nertc sdk device_id:%s Free: %u minimal: %u", device_id.c_str(), heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
 
-    cJSON* board_item = cJSON_GetObjectItem(root, "board");
-    if (!board_item) {
-        ESP_LOGE(TAG, "Invalid board info");
-        cJSON_Delete(root);
-        return;
-    }
-
-    cJSON* board_name_item = cJSON_GetObjectItem(board_item, "nertc_board_name");
-    if (!board_name_item || !cJSON_IsString(board_name_item)) {
-        ESP_LOGE(TAG, "Invalid board name in Board info JSON");
-        cJSON_Delete(root);
-        return;
-    }
-    std::string device_id = board_name_item->valuestring;
-    cJSON_Delete(root);
-
-    ESP_LOGI(TAG, "Start create nertc sdk: Free: %u minimal: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
     nertc_sdk_config_t nertc_sdk_config = { 0 };
-    nertc_sdk_config.app_key = CONFIG_NERTC_APPKEY;
+    nertc_sdk_config.app_key = local_config_appkey_.c_str();
     nertc_sdk_config.device_id = device_id.c_str();
     nertc_sdk_config.force_unsafe_mode = true;
     //如果打开服务端aec，这3个参数会由sdk内部控制
@@ -93,6 +87,7 @@ NeRtcProtocol::NeRtcProtocol() {
     nertc_sdk_config.audio_config.sample_rate = 16000;
     nertc_sdk_config.audio_config.out_sample_rate = 16000; //指定下行采样率使用16k
 #endif
+    nertc_sdk_config.audio_config.codec_type = NERTC_SDK_AUDIO_CODEC_TYPE_OPUS;
     ESP_LOGI(TAG, "Start set nertc sdk handler: Free: %u minimal: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
 
     nertc_sdk_config.event_handler.on_error = OnError;
@@ -121,19 +116,19 @@ NeRtcProtocol::NeRtcProtocol() {
 #else
     nertc_sdk_config.optional_config.enable_server_aec = false;
 #endif
-    nertc_sdk_config.optional_config.custom_config = CONFIG_NERTC_CUSTOM_SETTING;
-    
     if (Board::GetInstance().GetBoardType() == "ml307") { //4G模组，需要外部网络IO
         NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
-        nertc_sdk_config.optional_config.net_vtable = ext_net->GetVTable();
+        nertc_sdk_config.optional_config.ext_net_handle = ext_net->GetHandle();
     } else {
-        nertc_sdk_config.optional_config.net_vtable = nullptr;
+        nertc_sdk_config.optional_config.ext_net_handle = nullptr;
     }
 
+    nertc_sdk_config.optional_config.custom_config = custom_config_string.c_str();
     nertc_sdk_config.log_cfg.log_level = NERTC_SDK_LOG_INFO;
     nertc_sdk_config.licence_cfg.license = local_license_config.empty() ? NERTC_DEFAULT_TEST_LICENSE : local_license_config.c_str();
     nertc_sdk_config.user_data = this;
-
+    cJSON_Delete(config_json);
+    
     engine_ = nertc_create_engine(&nertc_sdk_config);
     auto ret = nertc_init(engine_);
     if (ret != 0) {
@@ -146,7 +141,10 @@ NeRtcProtocol::NeRtcProtocol() {
         .callback = [](void* arg) {
             NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(arg);
             if (instance) {
-                instance->CloseAudioChannel();
+                cJSON* data = cJSON_CreateObject();
+                cJSON_AddStringToObject(data, "type", "system");
+                cJSON_AddStringToObject(data, "command", "sleep");
+                if (instance->on_incoming_json_) instance->on_incoming_json_(data);
             }
         },
         .arg = this,
@@ -180,7 +178,7 @@ NeRtcProtocol::~NeRtcProtocol() {
     }
 
 #if NERTC_ENABLE_CONFIG_FILE
-    UnmountFileSystem();
+    NeRtcProtocol::UnmountFileSystem();
 #endif
 }
 
@@ -314,6 +312,7 @@ void NeRtcProtocol::SendAecReferenceAudio(const AudioStreamPacket& packet) {
     nertc_sdk_audio_encoded_frame_t encoded_frame;
     encoded_frame.data = const_cast<unsigned char*>(packet.payload.data());
     encoded_frame.length = packet.payload.size();
+    encoded_frame.encoded_timestamp = packet.timestamp;
 
     nertc_sdk_audio_frame_t audio_frame;
     audio_frame.type = NERTC_SDK_AUDIO_PCM_16;
@@ -322,14 +321,21 @@ void NeRtcProtocol::SendAecReferenceAudio(const AudioStreamPacket& packet) {
     nertc_push_audio_reference_frame(engine_, NERTC_SDK_MEDIA_MAIN_AUDIO, &encoded_frame, &audio_frame);
 }
 
+void NeRtcProtocol::SendMcpMessage(const std::string& message) {
+    if (!engine_ || !join_.load())
+        return;
+    nertc_ai_llm_prompt(engine_, message.c_str(), 1);
+}
+
 void NeRtcProtocol::RequestChecksum(std::string& checksum) {
     std::ostringstream post_body;
     post_body << "uid=" << UID
-              << "&appkey=" << CONFIG_NERTC_APPKEY
+              << "&appkey=" << local_config_appkey_
               << "&curtime=" << time(NULL);
     std::string post_str = post_body.str();
 
-    auto http = Board::GetInstance().CreateHttp();
+    auto network = Board::GetInstance().GetNetwork();
+    auto http = network->CreateHttp(0);
     http->SetHeader("Content-Type", "application/x-www-form-urlencoded");
     http->SetContent(std::move(post_str));
     if (!http->Open("POST", "http://webtest.netease.im/nrtcproxy/demo/getChecksum.action")) {
@@ -339,7 +345,7 @@ void NeRtcProtocol::RequestChecksum(std::string& checksum) {
 
     auto response = http->ReadAll();
     http->Close();
-    delete http;
+
     cJSON* root = cJSON_Parse(response.c_str());
     if (root == nullptr) {
         ESP_LOGE(TAG, "Failed to parse JSON response: %s", response.c_str());
@@ -675,7 +681,7 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
             cJSON_Delete(state_json);
             cJSON_Delete(arguments_json);
         } else if (name == "good_bye_call" || name == "Long_Silence") {
-            esp_err_t err = esp_timer_start_once(instance->close_timer_, 4 * 1000 * 1000);
+            esp_err_t err = esp_timer_start_once(instance->close_timer_, 3 * 1000 * 1000);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "start CloseAudioChannel_timer fail err: %s", esp_err_to_name(err));
                 instance->CloseAudioChannel();
@@ -714,6 +720,25 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
         }
 
         cJSON_Delete(data_json);
+    } else if (strncmp(type_str, "emotion", type_len) == 0) {
+        cJSON* data_json = cJSON_Parse(data_str);
+        if (!data_json) {
+            ESP_LOGE(TAG, "Failed to parse JSON data");
+            return;
+        }
+        cJSON* message = cJSON_GetObjectItem(data_json, "message");
+        if (!message || !cJSON_IsString(message)) {
+            ESP_LOGE(TAG, "message is null");
+            cJSON_Delete(data_json);
+            return;
+        }
+        std::string emotion = message->valuestring;
+        cJSON* emot_json = cJSON_CreateObject();
+        cJSON_AddStringToObject(emot_json, "type",    "llm");
+        cJSON_AddStringToObject(emot_json, "emotion", emotion.c_str());
+        if (instance->on_incoming_json_) instance->on_incoming_json_(emot_json);
+        cJSON_Delete(emot_json);
+        cJSON_Delete(data_json);
     }
 }
 
@@ -730,7 +755,7 @@ void NeRtcProtocol::OnAudioData(const nertc_sdk_callback_context_t* ctx, uint64_
     if (instance->on_incoming_audio_ != nullptr) {
         instance->on_incoming_audio_(AudioStreamPacket{.sample_rate = instance->recommended_audio_config_.out_sample_rate,
                                                         .frame_duration = instance->server_frame_duration_,
-                                                        .timestamp = 0,
+                                                        .timestamp = encoded_frame->encoded_timestamp,
                                                         .payload = std::move(payload_vector),
                                                         .muted = is_mute_packet,});
     }
@@ -847,8 +872,8 @@ cJSON* NeRtcProtocol::ReadConfigJson() {
         return nullptr;
     }
 
-    buffer[file_size] = '\0';
-    ESP_LOGI(TAG, "Config file content: %s", buffer); //这个日志要打印出来，排查问题依赖
+    buffer[file_size] = '\0'; 
+    ESP_LOGD(TAG, "Config file content: %s", buffer); //这个日志要打印出来，排查问题依赖
 
     cJSON* json = cJSON_Parse(buffer);
     free(buffer);
