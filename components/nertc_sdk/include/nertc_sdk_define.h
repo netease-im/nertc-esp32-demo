@@ -53,8 +53,15 @@ typedef enum {
   NERTC_SDK_AUDIO_PCM_16 = 0,
 } nertc_sdk_audio_pcm_type_e;
 
+typedef enum  {
+  NERTC_SDK_AUDIO_CODEC_TYPE_PCM = 0,
+  NERTC_SDK_AUDIO_CODEC_TYPE_OPUS = 1,
+  NERTC_SDK_AUDIO_CODEC_TYPE_G711 = 2,
+} nertc_sdk_audio_codec_type_e;
+
 typedef enum {
   NERTC_SDK_AUDIO_ENCODE_OPUS = 111,
+  NERTC_SDK_AUDIO_ENCODE_G711 = 8,
 } nertc_sdk_audio_encode_payload_e;
 
 /** 实时字幕状态 */
@@ -68,8 +75,8 @@ typedef enum {
 typedef struct nertc_sdk_optional_config {
   nertc_sdk_device_level_e device_performance_level;
   bool enable_server_aec;
-  char* custom_config; 
-  NetworkInterfaceVTable* net_vtable; // 用户自定义的网络接口
+  nertc_sdk_ext_net_handle_t* ext_net_handle; // 用户自定义的网络接口
+  const char* custom_config;
 } nertc_sdk_optional_config_t;
 
 typedef struct nertc_sdk_licence_config {
@@ -114,6 +121,9 @@ typedef struct nertc_sdk_audio_config {
   int samples_per_channel;
   /** 接收音频采样率 */
   int out_sample_rate;
+  /** 音频编码类型 */
+  nertc_sdk_audio_codec_type_e codec_type;
+
 } nertc_sdk_audio_config_t;
 
 typedef struct nertc_sdk_recommended_config {
@@ -142,7 +152,7 @@ typedef struct nertc_sdk_audio_encoded_frame {
   /** 编码音频帧的时间戳，单位为毫秒 */
   int64_t timestamp_ms;
   /** 编码时间，单位为样本数，如0、960、1920...递增 */
-  int encoded_timestamp;
+  uint32_t encoded_timestamp;
 } nertc_sdk_audio_encoded_frame_t;
 
 typedef struct nertc_sdk_asr_caption_config {

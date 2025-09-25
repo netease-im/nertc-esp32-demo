@@ -9,11 +9,6 @@
 #include <cstring>
 #include <string>
 #endif
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-#include "settings.h"
-#include "board.h"
-#include <esp_log.h>
-#endif
 
 #define TAG "AudioDebugger"
 
@@ -45,19 +40,6 @@ AudioDebugger::AudioDebugger() {
         ESP_LOGW(TAG, "Failed to create UDP socket: %d", errno);
     }
 #endif
-
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-    std::string nertc_url = CONFIG_USE_NERTC_AUDIO_DEBUGGER_WS_URL;
-    if (!nertc_url.empty()) {
-        Settings settings("websocket", true);
-        settings.SetString("url", nertc_url);
-        websocket_ = Board::GetInstance().CreateWebSocket();
-        if (!websocket_->Connect(nertc_url.c_str())) {
-            return;
-        }
-        ESP_LOGI(TAG, "Initialized ws server url: %s", nertc_url.c_str());
-    }
-#endif
 }
 
 AudioDebugger::~AudioDebugger() {
@@ -65,13 +47,6 @@ AudioDebugger::~AudioDebugger() {
     if (udp_sockfd_ >= 0) {
         close(udp_sockfd_);
         ESP_LOGI(TAG, "Closed UDP socket");
-    }
-#endif
-
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-    if (websocket_ != nullptr) {
-        delete websocket_;
-        websocket_ = nullptr;
     }
 #endif
 }
@@ -88,24 +63,4 @@ void AudioDebugger::Feed(const std::vector<int16_t>& data) {
         }
     }
 #endif
-
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-    if (websocket_ && websocket_->IsConnected()) {
-        std::vector<uint8_t> byte_data;
-        byte_data.resize(data.size() * sizeof(int16_t));
-        memcpy(byte_data.data(), data.data(), byte_data.size());
-        websocket_->Send(byte_data.data(), byte_data.size(), true);
-    }
-#endif
 }
-
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-void AudioDebugger::SendAudioInfo(int sample_rate, int channels) {
-    if (websocket_ && websocket_->IsConnected()) {
-        std::string json = "{\"sample_rate\":\"" + std::to_string(sample_rate) + 
-                        "\",\"channels\":\"" + std::to_string(channels) + "\"}";
-
-        websocket_->Send(json);
-    }
-}
-#endif

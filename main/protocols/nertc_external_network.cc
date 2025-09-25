@@ -1,12 +1,12 @@
 #include <cstring>
 #include "nertc_external_network.h"
 #include "board.h"
-#include "ml307_ssl_transport.h"
 #include <esp_log.h>
 
 #define TAG "NeRtcExternalNetwork"
 
-#define UDP_RECV_EVENT (1 << 0)
+#define TCP_RECV_EVENT (1 << 0)
+#define UDP_RECV_EVENT (1 << 1)
 
 NeRtcExternalNetwork* NeRtcExternalNetwork::instance_ = nullptr;
 NeRtcExternalNetwork* NeRtcExternalNetwork::GetInstance() {
@@ -23,7 +23,7 @@ void NeRtcExternalNetwork::DestroyInstance() {
 
 NeRtcExternalNetwork::NeRtcExternalNetwork() {
     // 初始化函数表
-    vtable_ = {
+    handle_ = {
         // HTTP 函数指针
         .create_http = CreateHttp,
         .destroy_http = DestroyHttp,
@@ -54,21 +54,27 @@ NeRtcExternalNetwork::NeRtcExternalNetwork() {
         .recv_udp = RecvUdp
     };
 
-    event_group_ = xEventGroupCreate();
+    tcp_event_group_ = xEventGroupCreate();
+    udp_event_group_ = xEventGroupCreate();
+
+    ESP_LOGI(TAG, "Create NeRtcExternalNetwork instance");
 }
 
 NeRtcExternalNetwork::~NeRtcExternalNetwork() {
-    vEventGroupDelete(event_group_);
+    vEventGroupDelete(udp_event_group_);
+    vEventGroupDelete(tcp_event_group_);
 }
 
 // HTTP 实现
-HttpHandle NeRtcExternalNetwork::CreateHttp() {
-    auto http = Board::GetInstance().CreateHttp();
+http_handle NeRtcExternalNetwork::CreateHttp() {
+    auto network = Board::GetInstance().GetNetwork();
+    auto http_unique = network->CreateHttp(0);
+    Http* http = http_unique.release();
 
     return static_cast<void*>(http);
 }
 
-void NeRtcExternalNetwork::DestroyHttp(HttpHandle handle) {
+void NeRtcExternalNetwork::DestroyHttp(http_handle handle) {
     if (!handle)
         return;
 
@@ -76,7 +82,7 @@ void NeRtcExternalNetwork::DestroyHttp(HttpHandle handle) {
     delete http;
 }
 
-void NeRtcExternalNetwork::SetHttpHeader(HttpHandle handle, const char* key, const char* value) {
+void NeRtcExternalNetwork::SetHttpHeader(http_handle handle, const char* key, const char* value) {
     if (!handle)
         return;
         
@@ -84,7 +90,7 @@ void NeRtcExternalNetwork::SetHttpHeader(HttpHandle handle, const char* key, con
     http->SetHeader(key, value);
 }
 
-bool NeRtcExternalNetwork::OpenHttp(HttpHandle handle, const char* method, const char* url, const char* content, size_t length) {
+bool NeRtcExternalNetwork::OpenHttp(http_handle handle, const char* method, const char* url, const char* content, size_t length) {
     if (!handle)
         return false;
         
@@ -98,7 +104,7 @@ bool NeRtcExternalNetwork::OpenHttp(HttpHandle handle, const char* method, const
     return true;
 }
 
-void NeRtcExternalNetwork::CloseHttp(HttpHandle handle) {
+void NeRtcExternalNetwork::CloseHttp(http_handle handle) {
     if (!handle)
         return;
 
@@ -106,7 +112,7 @@ void NeRtcExternalNetwork::CloseHttp(HttpHandle handle) {
     http->Close();
 }
 
-int NeRtcExternalNetwork::GetHttpStatusCode(HttpHandle handle) {
+int NeRtcExternalNetwork::GetHttpStatusCode(http_handle handle) {
     if (!handle)
         return -1;
 
@@ -114,7 +120,7 @@ int NeRtcExternalNetwork::GetHttpStatusCode(HttpHandle handle) {
     return http->GetStatusCode();
 }
 
-const char* NeRtcExternalNetwork::GetHttpResponseHeader(HttpHandle handle, const char* key) {
+const char* NeRtcExternalNetwork::GetHttpResponseHeader(http_handle handle, const char* key) {
     if (!handle)
         return "";
 
@@ -122,7 +128,7 @@ const char* NeRtcExternalNetwork::GetHttpResponseHeader(HttpHandle handle, const
     return http->GetResponseHeader(key).c_str();
 }
 
-size_t NeRtcExternalNetwork::GetHttpBodyLength(HttpHandle handle) {
+size_t NeRtcExternalNetwork::GetHttpBodyLength(http_handle handle) {
     if (!handle)
         return 0;
 
@@ -130,7 +136,7 @@ size_t NeRtcExternalNetwork::GetHttpBodyLength(HttpHandle handle) {
     return http->GetBodyLength();
 }
 
-size_t NeRtcExternalNetwork::GetHttpBody(HttpHandle handle, char* buffer, size_t buffer_size) {
+size_t NeRtcExternalNetwork::GetHttpBody(http_handle handle, char* buffer, size_t buffer_size) {
     if (!handle)
         return 0;
 
@@ -144,75 +150,111 @@ size_t NeRtcExternalNetwork::GetHttpBody(HttpHandle handle, char* buffer, size_t
     return body_length;
 }
 
-TcpHandle NeRtcExternalNetwork::CreateTcp() {
-    auto tcp = Board::GetInstance().CreateTcp(false);
+tcp_handle NeRtcExternalNetwork::CreateTcp() {
+    auto network = Board::GetInstance().GetNetwork();
+    auto tcp_unique = network->CreateTcp(1);
+    Tcp* tcp = tcp_unique.release();
+
+    tcp->OnStream([](const std::string& data) {
+        NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
+        std::lock_guard<std::mutex> lock(ext_net->tcp_mutex_);
+        ext_net->tcp_recv_buffer_.append(data);
+        xEventGroupSetBits(ext_net->tcp_event_group_, TCP_RECV_EVENT);
+    });
 
     return static_cast<void*>(tcp);
 }
 
-void NeRtcExternalNetwork::SetTcpSocketOpt(TcpHandle, int, int) {
+void NeRtcExternalNetwork::SetTcpSocketOpt(tcp_handle, int, int) {
 
 }
 
-void NeRtcExternalNetwork::DestroyTcp(TcpHandle handle) {
+void NeRtcExternalNetwork::DestroyTcp(tcp_handle handle) {
     if (!handle)
         return;
 
-    Transport* tcp = static_cast<Transport*>(handle);
+    Tcp* tcp = static_cast<Tcp*>(handle);
     delete tcp;
 }
 
-bool NeRtcExternalNetwork::ConnectTcp(TcpHandle handle, const char* host, int port) {
+bool NeRtcExternalNetwork::ConnectTcp(tcp_handle handle, const char* host, int port) {
     if (!handle)
         return false;
         
-    Transport* tcp = static_cast<Transport*>(handle);
+    Tcp* tcp = static_cast<Tcp*>(handle);
     return tcp->Connect(host, port);
 }
 
-void NeRtcExternalNetwork::DisconnectTcp(TcpHandle handle) {
+void NeRtcExternalNetwork::DisconnectTcp(tcp_handle handle) {
     if (!handle)
         return;
 
-    Transport* tcp = static_cast<Transport*>(handle);
+    Tcp* tcp = static_cast<Tcp*>(handle);
     tcp->Disconnect();
 }
 
-int NeRtcExternalNetwork::SendTcp(TcpHandle handle, const char* data, size_t length) {
+int NeRtcExternalNetwork::SendTcp(tcp_handle handle, const char* data, size_t length) {
     if (!handle)
         return -1;
 
-    Transport* tcp = static_cast<Transport*>(handle);
-    return tcp->Send(data, length);
+    Tcp* tcp = static_cast<Tcp*>(handle);
+    return tcp->Send(std::string(data, length));
 }
 
-int NeRtcExternalNetwork::RecvTcp(TcpHandle handle, char* buffer, size_t buffer_size) {
-    if (!handle)
+int NeRtcExternalNetwork::RecvTcp(tcp_handle handle,
+                                  char* buffer,
+                                  size_t buffer_size) {
+    if (!handle || !buffer)
         return -1;
 
-    Transport* tcp = static_cast<Transport*>(handle);
-    return tcp->Receive(buffer, buffer_size);
+    NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
+
+    {
+        std::lock_guard<std::mutex> lock(ext_net->tcp_mutex_);
+        if (!ext_net->tcp_recv_buffer_.empty()) {
+            size_t to_copy = std::min(buffer_size, ext_net->tcp_recv_buffer_.size());
+            memcpy(buffer, ext_net->tcp_recv_buffer_.data(), to_copy);
+            ext_net->tcp_recv_buffer_.erase(0, to_copy);
+            return static_cast<int>(to_copy);   // 立刻返回，不阻塞
+        }
+    }
+
+    EventBits_t bits = xEventGroupWaitBits(ext_net->tcp_event_group_,
+                                           TCP_RECV_EVENT,
+                                           pdTRUE,          // 退出时清除事件
+                                           pdFALSE,
+                                           portMAX_DELAY);
+    if ((bits & TCP_RECV_EVENT) == 0)
+        return 0;  
+
+    std::lock_guard<std::mutex> lock(ext_net->tcp_mutex_);
+    size_t to_copy = std::min(buffer_size, ext_net->tcp_recv_buffer_.size());
+    memcpy(buffer, ext_net->tcp_recv_buffer_.data(), to_copy);
+    ext_net->tcp_recv_buffer_.erase(0, to_copy);
+    return static_cast<int>(to_copy);
 }
 
-UdpHandle NeRtcExternalNetwork::CreateUdp() {
-    auto udp = Board::GetInstance().CreateUdp();
+udp_handle NeRtcExternalNetwork::CreateUdp() {
+    auto network = Board::GetInstance().GetNetwork();
+    auto udp_unique = network->CreateUdp(2);
+    Udp* udp = udp_unique.release();
 
     udp->OnMessage([](const std::string& data) {
         NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
-        std::lock_guard<std::mutex> lock(ext_net->mutex_);
+        std::lock_guard<std::mutex> lock(ext_net->udp_mutex_);
         ext_net->udp_data_queue_.emplace_back(data);
-        xEventGroupSetBits(ext_net->event_group_, UDP_RECV_EVENT);
+        xEventGroupSetBits(ext_net->udp_event_group_, UDP_RECV_EVENT);
     });
 
     return static_cast<void*>(udp);
 }
 
-void NeRtcExternalNetwork::SetUdpSocketOpt(UdpHandle, int timeout, int) {
+void NeRtcExternalNetwork::SetUdpSocketOpt(udp_handle, int timeout, int) {
     NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
     ext_net->udp_timeout_ms_ = timeout;
 }
 
-void NeRtcExternalNetwork::DestroyUdp(UdpHandle handle) {
+void NeRtcExternalNetwork::DestroyUdp(udp_handle handle) {
     if (!handle)
         return;
 
@@ -220,7 +262,7 @@ void NeRtcExternalNetwork::DestroyUdp(UdpHandle handle) {
     delete udp;
 }
 
-bool NeRtcExternalNetwork::ConnectUdp(UdpHandle handle, const char* host, int port) {
+bool NeRtcExternalNetwork::ConnectUdp(udp_handle handle, const char* host, int port) {
     if (!handle)
         return false;
         
@@ -228,7 +270,7 @@ bool NeRtcExternalNetwork::ConnectUdp(UdpHandle handle, const char* host, int po
     return udp->Connect(std::string(host), (int)port);
 }
 
-void NeRtcExternalNetwork::DisconnectUdp(UdpHandle handle) {
+void NeRtcExternalNetwork::DisconnectUdp(udp_handle handle) {
     if (!handle)
         return;
 
@@ -236,7 +278,7 @@ void NeRtcExternalNetwork::DisconnectUdp(UdpHandle handle) {
     udp->Disconnect();
 }
 
-int NeRtcExternalNetwork::SendUdp(UdpHandle handle, const char* data, size_t length) {
+int NeRtcExternalNetwork::SendUdp(udp_handle handle, const char* data, size_t length) {
     if (!handle)
         return -1;
 
@@ -244,14 +286,14 @@ int NeRtcExternalNetwork::SendUdp(UdpHandle handle, const char* data, size_t len
     return udp->Send(std::string(data, length));
 }
 
-int NeRtcExternalNetwork::RecvUdp(UdpHandle handle, char* buffer, size_t buffer_size) {
+int NeRtcExternalNetwork::RecvUdp(udp_handle handle, char* buffer, size_t buffer_size) {
     if (!handle)
         return -1;
 
     NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
-    auto bits = xEventGroupWaitBits(ext_net->event_group_, UDP_RECV_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(ext_net->udp_timeout_ms_));
+    auto bits = xEventGroupWaitBits(ext_net->udp_event_group_, UDP_RECV_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(ext_net->udp_timeout_ms_));
     if (bits & UDP_RECV_EVENT) {
-        std::lock_guard<std::mutex> lock(ext_net->mutex_);
+        std::lock_guard<std::mutex> lock(ext_net->udp_mutex_);
         if (!ext_net->udp_data_queue_.empty()) {
             auto& data = ext_net->udp_data_queue_.front();
             size_t to_copy = std::min(buffer_size, data.size());

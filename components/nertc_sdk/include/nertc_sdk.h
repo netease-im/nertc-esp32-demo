@@ -172,6 +172,35 @@ NERTC_SDK_API int nertc_ai_manual_interrupt(nertc_sdk_engine_t engine);
  */
 NERTC_SDK_API int nertc_ai_hang_up(nertc_sdk_engine_t engine);
 
+/**
+ * @brief AI大模型请求
+ * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
+ * @param text 文本
+ * @param interrupt_mode 打断模式：<br>
+ *         - 1：高优先级。传入信息直接打断交互，进行处理。 <br>
+ *         - 2：中优先级。等待当前交互结束后，进行处理。 <br>
+ *         - 3：低优先级。如当前正在发生交互，直接丢弃。 <br>
+ * @return 方法调用结果：<br>
+ *         -   0：成功 <br>
+ *         - 非0：失败 <br>
+ * */
+NERTC_SDK_API int nertc_ai_llm_prompt(nertc_sdk_engine_t engine, const char* text, int interrupt_mode);
+
+/**
+ * @brief 外部文本转语音
+ * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
+ * @param text 外部文本
+ * @param interrupt_mode 打断模式：<br>
+ *         - 1：高优先级。传入信息直接打断交互，进行处理。 <br>
+ *         - 2：中优先级。等待当前交互结束后，进行处理。 <br>
+ *         - 3：低优先级。如当前正在发生交互，直接丢弃。 <br>
+ * @param add_context 是否添加到聊天上下文中
+ * @return 方法调用结果：<br>
+ *         -   0：成功 <br>
+ *         - 非0：失败 <br>
+ * */
+NERTC_SDK_API int nertc_ai_external_tts(nertc_sdk_engine_t engine, const char* text, int interrupt_mode, bool add_context);
+
 #ifdef __cplusplus
 }
 #endif
