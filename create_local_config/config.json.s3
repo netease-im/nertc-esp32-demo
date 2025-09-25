@@ -3,5 +3,5 @@
 		"license": ""
 	},
 	"appkey":"",
-	"blufi_wifi" : true
+	"blufi_wifi" : false
 }
