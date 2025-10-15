@@ -42,29 +42,29 @@ private:
     Pca9557* pca9557_;
 
 public:
-    CustomAudioCodec(i2c_master_bus_handle_t i2c_bus, Pca9557* pca9557) 
-        : BoxAudioCodec(i2c_bus, 
-                       AUDIO_INPUT_SAMPLE_RATE, 
+    CustomAudioCodec(i2c_master_bus_handle_t i2c_bus, Pca9557* pca9557)
+        : BoxAudioCodec(i2c_bus,
+                       AUDIO_INPUT_SAMPLE_RATE,
                        AUDIO_OUTPUT_SAMPLE_RATE,
-                       AUDIO_I2S_GPIO_MCLK, 
-                       AUDIO_I2S_GPIO_BCLK, 
-                       AUDIO_I2S_GPIO_WS, 
-                       AUDIO_I2S_GPIO_DOUT, 
+                       AUDIO_I2S_GPIO_MCLK,
+                       AUDIO_I2S_GPIO_BCLK,
+                       AUDIO_I2S_GPIO_WS,
+                       AUDIO_I2S_GPIO_DOUT,
                        AUDIO_I2S_GPIO_DIN,
-                       GPIO_NUM_NC, 
-                       AUDIO_CODEC_ES8311_ADDR, 
-                       AUDIO_CODEC_ES7210_ADDR, 
+                       GPIO_NUM_NC,
+                       AUDIO_CODEC_ES8311_ADDR,
+                       AUDIO_CODEC_ES7210_ADDR,
                        AUDIO_INPUT_REFERENCE),
           pca9557_(pca9557) {
     }
 
     virtual void EnableOutput(bool enable) override {
         BoxAudioCodec::EnableOutput(enable);
-        if (enable) {
-            pca9557_->SetOutputState(1, 1);
-        } else {
-            pca9557_->SetOutputState(1, 0);
-        }
+        // if (enable) {
+        //     pca9557_->SetOutputState(1, 1);
+        // } else {
+        //     pca9557_->SetOutputState(1, 0);
+        // }
     }
 };
 
@@ -94,7 +94,7 @@ private:
         ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_));
 
         // Initialize PCA9557
-        pca9557_ = new Pca9557(i2c_bus_, 0x19);
+        // pca9557_ = new Pca9557(i2c_bus_, 0x19);
     }
 
     void InitializeSpi() {
@@ -110,6 +110,7 @@ private:
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
+            ESP_LOGD(TAG, "InitializeButtons OnClick");
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
@@ -117,14 +118,53 @@ private:
             app.ToggleChatState();
         });
 
+        boot_button_.OnDoubleClick([this]() {
+            ESP_LOGD(TAG, "InitializeButtons OnDoubleClick");
+        });
+
 #if CONFIG_USE_DEVICE_AEC
         boot_button_.OnDoubleClick([this]() {
+            ESP_LOGD(TAG, "InitializeButtons OnDoubleClick");
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateIdle) {
                 app.SetAecMode(app.GetAecMode() == kAecOff ? kAecOnDeviceSide : kAecOff);
-            } 
+            }
         });
 #endif
+    }
+
+    void SetPowerButtonHigh() {
+        // 配置GPIO为输出模式
+        gpio_config_t gpio_conf = {};
+        // gpio_conf.intr_type = GPIO_INTR_DISABLE;        // 禁用中断
+        gpio_conf.mode = GPIO_MODE_OUTPUT;              // 输出模式
+        gpio_conf.pin_bit_mask = (1ULL << GPIO_NUM_9);  // GPIO掩码
+        // gpio_conf.pull_down_en = GPIO_PULLDOWN_DISABLE; // 禁用下拉
+        // gpio_conf.pull_up_en = GPIO_PULLUP_DISABLE;     // 禁用上拉
+
+        ESP_ERROR_CHECK(gpio_config(&gpio_conf));
+
+        // 设置GPIO输出高电平
+        ESP_ERROR_CHECK(gpio_set_level(GPIO_NUM_9, 1));
+
+        ESP_LOGI(TAG, "Power button GPIO %d set to HIGH", GPIO_NUM_9);
+    }
+
+    void SetSpeakerButtonHigh() {
+        // 配置GPIO为输出模式
+        gpio_config_t gpio_conf = {};
+        gpio_conf.intr_type = GPIO_INTR_DISABLE;        // 禁用中断
+        gpio_conf.mode = GPIO_MODE_OUTPUT;              // 输出模式
+        gpio_conf.pin_bit_mask = (1ULL << GPIO_NUM_48);  // GPIO掩码
+        gpio_conf.pull_down_en = GPIO_PULLDOWN_DISABLE; // 禁用下拉
+        gpio_conf.pull_up_en = GPIO_PULLUP_DISABLE;     // 禁用上拉
+
+        ESP_ERROR_CHECK(gpio_config(&gpio_conf));
+
+        // 设置GPIO输出高电平
+        ESP_ERROR_CHECK(gpio_set_level(GPIO_NUM_48, 1));
+
+        ESP_LOGI(TAG, "Speaker button GPIO %d set to HIGH", GPIO_NUM_48);
     }
 
     void InitializeSt7789Display() {
@@ -149,7 +189,7 @@ private:
         panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
         panel_config.bits_per_pixel = 16;
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io, &panel_config, &panel));
-        
+
         esp_lcd_panel_reset(panel);
         pca9557_->SetOutputState(0, 0);
 
@@ -177,7 +217,7 @@ private:
             .x_max = DISPLAY_WIDTH,
             .y_max = DISPLAY_HEIGHT,
             .rst_gpio_num = GPIO_NUM_NC, // Shared with LCD reset
-            .int_gpio_num = GPIO_NUM_NC, 
+            .int_gpio_num = GPIO_NUM_NC,
             .levels = {
                 .reset = 0,
                 .interrupt = 0,
@@ -198,7 +238,7 @@ private:
 
         /* Add touch input (for selected screen) */
         const lvgl_port_touch_cfg_t touch_cfg = {
-            .disp = lv_display_get_default(), 
+            .disp = lv_display_get_default(),
             .handle = tp,
         };
 
@@ -241,13 +281,16 @@ private:
     }
 
 public:
-    LichuangDevBoard() : boot_button_(BOOT_BUTTON_GPIO) {
+    LichuangDevBoard() : boot_button_(GPIO_NUM_9) {
         InitializeI2c();
         InitializeSpi();
-        InitializeSt7789Display();
-        InitializeTouch();
+        // InitializeSt7789Display();
+        // InitializeTouch();
         InitializeButtons();
-        InitializeCamera();
+        // InitializeCamera();
+
+        SetPowerButtonHigh();
+        SetSpeakerButtonHigh();
 
 #if CONFIG_IOT_PROTOCOL_XIAOZHI
         auto& thing_manager = iot::ThingManager::GetInstance();
@@ -259,15 +302,15 @@ public:
 
     virtual AudioCodec* GetAudioCodec() override {
         static CustomAudioCodec audio_codec(
-            i2c_bus_, 
+            i2c_bus_,
             pca9557_);
         return &audio_codec;
     }
 
-    virtual Display* GetDisplay() override {
-        return display_;
-    }
-    
+    // virtual Display* GetDisplay() override {
+    //     return display_;
+    // }
+
     virtual Backlight* GetBacklight() override {
         static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
         return &backlight;
