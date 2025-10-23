@@ -84,6 +84,17 @@ public:
                   int width, int height, int offset_x, int offset_y,
                   bool mirror_x, bool mirror_y, bool swap_xy,
                   DisplayFonts fonts);
+#if defined(CONFIG_ENABLE_ANIM_EMOJI)
+    // 重写表情设置方法
+    virtual void SetEmotion(const char* emotion) override;
+
+    // 重写聊天消息设置方法
+    virtual void SetChatMessage(const char* role, const char* content) override;
+private:
+    void SetupGifContainer();
+
+    lv_obj_t* emotion_gif_ = nullptr;  ///< GIF表情组件
+#endif
 };
 
 // QSPI LCD显示器

@@ -8,6 +8,7 @@
 #include <cJSON.h>
 #include "protocol.h"
 #include "nertc_sdk.h"
+#include "nertc_external_network.h"
 
 #define NERTC_ENABLE_CONFIG_FILE 1
 
@@ -22,6 +23,7 @@ public:
     bool IsAudioChannelOpened() const override;
     bool SendAudio(const AudioStreamPacket& packet) override;
     void SendAecReferenceAudio(const AudioStreamPacket& packet) override;
+    void SendMcpMessage(const std::string& message) override;
 private:
     void RequestChecksum(std::string& checksum);
     void ParseFunctionCall(cJSON* data, std::string& arguments, std::string& name);
@@ -64,12 +66,15 @@ private:
     bool SendText(const std::string& text) override;
 
 #if NERTC_ENABLE_CONFIG_FILE
-    bool MountFileSystem();
-    void UnmountFileSystem();
+public:
+    static bool MountFileSystem();
+    static void UnmountFileSystem();
 
-    std::string config_file_path_ = "/spiffs/config.json";
-    cJSON* ReadConfigJson();
+    static std::string config_file_path_;
+    static cJSON* ReadConfigJson();
 #endif
+private:
+    std::string local_config_appkey_;
 };
 
 #endif

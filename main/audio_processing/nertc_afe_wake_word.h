@@ -38,6 +38,7 @@ public:
 
 private:
     nertc_wakeup_sdk_t nertc_wake_word_ = nullptr;
+    bool task_created_ = false;
     std::function<void(const std::string& wake_word)> wake_up_call_back_;
     std::vector<std::string> wake_words_;
     EventGroupHandle_t event_group_;
