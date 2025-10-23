@@ -36,6 +36,7 @@ private:
     std::function<void(bool speaking)> vad_state_change_callback_;
     AudioCodec* codec_ = nullptr;
     bool is_speaking_ = false;
+    std::vector<std::vector<int16_t>> output_buffer_;
 
     void AudioProcessorTask();
 };

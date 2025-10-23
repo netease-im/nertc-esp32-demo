@@ -28,7 +28,7 @@ void AfeAudioProcessor::Initialize(AudioCodec* codec) {
     afe_config_t* afe_config = afe_config_init(input_format.c_str(), NULL, AFE_TYPE_VC, AFE_MODE_HIGH_PERF);
     afe_config->aec_mode = AEC_MODE_VOIP_HIGH_PERF;
     afe_config->vad_mode = VAD_MODE_0;
-    afe_config->vad_min_noise_ms = 100;
+    afe_config->vad_min_noise_ms = 4000;
 
     if (ns_model_name != nullptr) {
         afe_config->ns_init = true;
@@ -129,14 +129,36 @@ void AfeAudioProcessor::AudioProcessorTask() {
         if (vad_state_change_callback_) {
             if (res->vad_state == VAD_SPEECH && !is_speaking_) {
                 is_speaking_ = true;
+                ESP_LOGI("vad state:",  "is_speaking_ = true");
                 vad_state_change_callback_(true);
             } else if (res->vad_state == VAD_SILENCE && is_speaking_) {
                 is_speaking_ = false;
+                ESP_LOGI("vad state:", "is_speaking_ = false");
                 vad_state_change_callback_(false);
             }
         }
-
-        if (output_callback_) {
+#ifndef CONFIG_USE_DEVICE_AEC
+        if(!is_speaking_)
+        {
+            output_buffer_.push_back(std::vector<int16_t>(res->data, res->data + res->data_size / sizeof(int16_t)));
+            if(output_buffer_.size() > 5){
+                output_buffer_.erase(output_buffer_.begin());
+            }
+        }
+#endif
+        if (output_callback_ 
+#ifndef CONFIG_USE_DEVICE_AEC
+            && is_speaking_
+        ) {
+            if(!output_buffer_.empty()){
+                for(auto& buffer : output_buffer_){
+                    output_callback_(std::move(buffer));
+                }
+                output_buffer_.clear();
+            }
+#else
+        ) {
+#endif
             output_callback_(std::vector<int16_t>(res->data, res->data + res->data_size / sizeof(int16_t)));
         }
     }
