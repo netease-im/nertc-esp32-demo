@@ -9,27 +9,20 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <esp_http.h>
-#include <esp_mqtt.h>
-#include <esp_udp.h>
-#include <tcp_transport.h>
-#include <tls_transport.h>
-#include <web_socket.h>
+#include <esp_network.h>
 #include <esp_log.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
 
 #include <wifi_station.h>
 #include <wifi_configuration_ap.h>
 #include <ssid_manager.h>
 
-static const char *TAG = "WifiBoard";
-
-#ifdef SUPPORT_BLUFI_FOR_NERTC
-#include "blufi/blufi_wifi.h"
-#endif
-
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
-#define NERTC_BOARD_NAME "yunxin"
+    #include "nertc_protocol.h"
 #endif
+
+static const char *TAG = "WifiBoard";
 
 WifiBoard::WifiBoard() {
     Settings settings("wifi", true);
@@ -38,15 +31,6 @@ WifiBoard::WifiBoard() {
         ESP_LOGI(TAG, "force_ap is set to 1, reset to 0");
         settings.SetInt("force_ap", 0);
     }
-#ifdef SUPPORT_BLUFI_FOR_NERTC
-    bool force_blufi = settings.GetInt("force_blufi") == 1;
-    if (force_blufi) {
-        ESP_LOGI(TAG, "force_blufi is set to 1, reset to 0");
-        settings.SetInt("force_blufi", 0);
-
-        EnterWifiConfigModeWithBlufi();
-    }
-#endif
 }
 
 std::string WifiBoard::GetBoardType() {
@@ -54,6 +38,17 @@ std::string WifiBoard::GetBoardType() {
 }
 
 void WifiBoard::EnterWifiConfigMode() {
+    if (NeRtcProtocol::MountFileSystem()) {
+        auto* config_json = NeRtcProtocol::ReadConfigJson();
+        if(config_json) {
+            cJSON* blufi_wifi = cJSON_GetObjectItem(config_json, "blufi_wifi");
+            if (blufi_wifi && cJSON_IsBool(blufi_wifi) && blufi_wifi->valueint) {
+                ResetWifiConfigurationWithBlufi(); //蓝牙配网
+                return;
+            }
+        }
+    }
+
     auto& application = Application::GetInstance();
     application.SetDeviceState(kDeviceStateWifiConfiguring);
 
@@ -85,27 +80,6 @@ void WifiBoard::EnterWifiConfigMode() {
     }
 }
 
-#ifdef SUPPORT_BLUFI_FOR_NERTC
-void WifiBoard::EnterWifiConfigModeWithBlufi() {
-    int free_sram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    int min_free_sram = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
-    ESP_LOGI(TAG, "EnterWifiConfigModeWithBlufi Free internal: %u minimal internal: %u", free_sram, min_free_sram);
-
-    wifi_credential_t wifi_cred = initialise_wifi_and_blufi(NERTC_BOARD_NAME); //会阻塞
-    if (wifi_cred.succ == 1) {
-        ESP_LOGI(TAG, "BLUFI WiFi connected! SSID: %s", wifi_cred.ssid);
-        SsidManager::GetInstance().AddSsid(wifi_cred.ssid, wifi_cred.password);
-    } else {
-        ESP_LOGE(TAG, "BLUFI WiFi connection failed");
-    }
-
-    ESP_LOGI(TAG, "BLUFI WiFi configuration completed, restarting...");
-    vTaskDelay(pdMS_TO_TICKS(200));
-    // 执行重启
-    esp_restart();
-}
-#endif
-
 void WifiBoard::StartNetwork() {
     // User can press BOOT button while starting to enter WiFi configuration mode
     if (wifi_config_mode_) {
@@ -135,6 +109,9 @@ void WifiBoard::StartNetwork() {
         display->ShowNotification(notification.c_str(), 30000);
     });
     wifi_station.OnConnected([this](const std::string& ssid) {
+        auto& application = Application::GetInstance();
+        application.PlaySound(Lang::Sounds::P3_CONNECTED);
+
         auto display = Board::GetInstance().GetDisplay();
         std::string notification = Lang::Strings::CONNECTED_TO;
         notification += ssid;
@@ -149,29 +126,13 @@ void WifiBoard::StartNetwork() {
         EnterWifiConfigMode();
         return;
     }
+
+    ESP_LOGI(TAG, "wifi start network success, ip address: %s", wifi_station.GetIpAddress().c_str());
 }
 
-Http* WifiBoard::CreateHttp() {
-    return new EspHttp();
-}
-
-WebSocket* WifiBoard::CreateWebSocket() {
-    Settings settings("websocket", false);
-    std::string url = settings.GetString("url");
-    if (url.find("wss://") == 0) {
-        return new WebSocket(new TlsTransport());
-    } else {
-        return new WebSocket(new TcpTransport());
-    }
-    return nullptr;
-}
-
-Mqtt* WifiBoard::CreateMqtt() {
-    return new EspMqtt();
-}
-
-Udp* WifiBoard::CreateUdp() {
-    return new EspUdp();
+NetworkInterface* WifiBoard::GetNetwork() {
+    static EspNetwork network;
+    return &network;
 }
 
 const char* WifiBoard::GetNetworkStateIcon() {
@@ -203,9 +164,6 @@ std::string WifiBoard::GetBoardJson() {
         board_json += "\"channel\":" + std::to_string(wifi_station.GetChannel()) + ",";
         board_json += "\"ip\":\"" + wifi_station.GetIpAddress() + "\",";
     }
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-    board_json += "\"nertc_board_name\":\"" + SystemInfo::GetWifiName(NERTC_BOARD_NAME) + "\",";
-#endif
     board_json += "\"mac\":\"" + SystemInfo::GetMacAddress() + "\"}";
     return board_json;
 }
@@ -229,20 +187,31 @@ void WifiBoard::ResetWifiConfiguration() {
 
 void WifiBoard::ResetWifiConfigurationWithBlufi() {
     // Set a flag and reboot the device to enter the wifi blufi mode
-    {
-        Settings settings("wifi", true);
-        settings.SetInt("force_blufi", 1);
-    }
+    // {
+    //     Settings settings("wifi", true);
+    //     settings.SetInt("force_blufi", 1);
+    // }
     GetDisplay()->ShowNotification(Lang::Strings::ENTERING_WIFI_CONFIG_MODE);
 
     // 播报配置 WiFi 的提示
     std::string hint = "进入蓝牙配网模式";
+    hint += "\n\n";
     auto& application = Application::GetInstance();
     application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "", Lang::Sounds::P3_BLUFI);
 
     vTaskDelay(pdMS_TO_TICKS(3000));
-    // Reboot the device
-    esp_restart();
+
+    const esp_partition_t *blufi_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_2, "blufi");
+    
+    if (blufi_partition != NULL) {
+        esp_ota_set_boot_partition(blufi_partition);
+        ESP_LOGI(TAG, "Switched to blufi partition, restarting...\n");
+        vTaskDelay(pdMS_TO_TICKS(300));
+        esp_restart();
+    } else {
+        ESP_LOGI(TAG, "Blufi partition not found!\n");
+    }
 }
 
 std::string WifiBoard::GetDeviceStatusJson() {
@@ -334,4 +303,16 @@ std::string WifiBoard::GetDeviceStatusJson() {
     cJSON_free(json_str);
     cJSON_Delete(root);
     return json;
+}
+
+std::string WifiBoard::GetBoardName() {
+    Settings settings("board", true);
+    std::string name = settings.GetString("name");
+    if (name.empty()) {
+        name = SystemInfo::GetWifiName(NERTC_BOARD_NAME);
+        settings.SetString("name", name);
+    }
+    ESP_LOGI(TAG, "GetBoardName name=%s", name.c_str());
+
+    return name;
 }

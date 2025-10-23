@@ -6,6 +6,7 @@
 #include <freertos/task.h>
 #include <esp_timer.h>
 
+#include <atomic>
 #include <string>
 #include <mutex>
 #include <list>
@@ -49,14 +50,17 @@ enum DeviceState {
     kDeviceStateActivating,
     kDeviceStateFatalError
 };
-
-#if defined(CONFIG_CONNECTION_TYPE_NERTC) && defined(CONFIG_USE_NERTC_SERVER_AEC)
+#ifdef CONFIG_IDF_TARGET_ESP32C3 
 #define OPUS_FRAME_DURATION_MS 20
 #else
 #define OPUS_FRAME_DURATION_MS 60
 #endif
-#define MAX_AUDIO_PACKETS_IN_QUEUE (2400 / OPUS_FRAME_DURATION_MS)
 
+#define MAX_AUDIO_PACKETS_IN_QUEUE (600 / OPUS_FRAME_DURATION_MS)
+
+#ifdef CONFIG_CONNECTION_TYPE_NERTC
+#define NERTC_BOARD_NAME "yunxin"
+#endif
 class Application {
 public:
     static Application& GetInstance() {
@@ -87,6 +91,7 @@ public:
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
     BackgroundTask* GetBackgroundTask() const { return background_task_; }
+    void TouchActive(int value_head, int value_body);
 
 private:
     Application();
@@ -136,6 +141,7 @@ private:
 
 #if defined(CONFIG_CONNECTION_TYPE_NERTC)
     OpusResampler output_reference_resampler_;
+    std::atomic<int> nertc_audio_output_task_count_ = 0;
 #endif
     void MainEventLoop();
     void OnAudioInput();
@@ -154,6 +160,10 @@ private:
     void OnClockTimer();
     void SetListeningMode(ListeningMode mode);
     void AudioLoop();
+
+    int touch_count_ = 0;
+    bool ai_sleep_ = false;
+    char *buffer_ = nullptr;
 };
 
 #endif // _APPLICATION_H_

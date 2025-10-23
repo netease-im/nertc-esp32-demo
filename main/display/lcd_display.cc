@@ -13,6 +13,10 @@
 
 #include "board.h"
 
+#if defined(CONFIG_ENABLE_ANIM_EMOJI)
+#include "anim_emoji_gif.h"
+#endif
+
 #define TAG "LcdDisplay"
 
 // Color definitions for dark theme
@@ -146,7 +150,131 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     }
 
     SetupUI();
+    LcdDisplay::SetTheme("light");
+#if defined(CONFIG_ENABLE_ANIM_EMOJI)
+    SetupGifContainer();
+    SetEmotion("neutral");
+#endif
 }
+#if defined(CONFIG_ENABLE_ANIM_EMOJI)
+void SpiLcdDisplay::SetEmotion(const char* emotion) {
+    if (!emotion || !emotion_gif_) {
+        return;
+    }
+    DisplayLockGuard lock(this);
+    const lv_image_dsc_t* emotion_gif = anim_emoji_gif_get_by_name(emotion);
+    if (emotion_gif) {
+        lv_gif_set_src(emotion_gif_, emotion_gif);
+        ESP_LOGI(TAG, "设置表情: %s", emotion);
+    }
+}
+
+void SpiLcdDisplay::SetChatMessage(const char* role, const char* content) {
+#if defined(CONFIG_USE_ANIM_EMOJI_OTTO)
+    DisplayLockGuard lock(this);
+    if (chat_message_label_ == nullptr) {
+        return;
+    }
+
+    if (content == nullptr || strlen(content) == 0) {
+        lv_obj_add_flag(chat_message_label_, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    lv_label_set_text(chat_message_label_, content);
+    lv_obj_clear_flag(chat_message_label_, LV_OBJ_FLAG_HIDDEN);
+#endif
+}
+#if defined(CONFIG_USE_ANIM_EMOJI_OTTO)
+// otto emoji
+void SpiLcdDisplay::SetupGifContainer() {
+    DisplayLockGuard lock(this);
+
+    if (emotion_label_) {
+        lv_obj_del(emotion_label_);
+        emotion_label_ = nullptr;
+    }
+
+    if (chat_message_label_) {
+        lv_obj_del(chat_message_label_);
+        chat_message_label_ = nullptr;
+    }
+    if (content_) {
+        lv_obj_del(content_);
+        content_ = nullptr;
+    }
+
+    content_ = lv_obj_create(container_);
+    lv_obj_set_scrollbar_mode(content_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_size(content_, LV_HOR_RES, LV_HOR_RES);
+    lv_obj_set_style_bg_opa(content_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(content_, 0, 0);
+    lv_obj_set_flex_grow(content_, 1);
+    lv_obj_center(content_);
+
+    emotion_gif_ = lv_gif_create(content_);
+    int gif_size = LV_HOR_RES;
+    lv_obj_set_size(emotion_gif_, gif_size, gif_size);
+    lv_obj_set_style_border_width(emotion_gif_, 0, 0);
+    lv_obj_set_style_bg_opa(emotion_gif_, LV_OPA_TRANSP, 0);
+    lv_obj_center(emotion_gif_);
+
+    chat_message_label_ = lv_label_create(content_);
+    lv_label_set_text(chat_message_label_, "");
+    lv_obj_set_width(chat_message_label_, LV_HOR_RES * 0.9);
+    lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(chat_message_label_, lv_color_white(), 0);
+    lv_obj_set_style_border_width(chat_message_label_, 0, 0);
+
+    lv_obj_set_style_bg_opa(chat_message_label_, LV_OPA_70, 0);
+    lv_obj_set_style_bg_color(chat_message_label_, lv_color_black(), 0);
+    lv_obj_set_style_pad_ver(chat_message_label_, 5, 0);
+
+    lv_obj_align(chat_message_label_, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    LcdDisplay::SetTheme("dark");
+}
+#elif defined(CONFIG_USE_ANIM_EYE_240X240_GIF1) || defined(CONFIG_USE_ANIM_EYE_160X160_GIF1) || defined(CONFIG_USE_ANIM_EYE_240X240_GIF2) || defined(CONFIG_USE_ANIM_EYE_160X160_GIF2)
+// eye emoji
+void SpiLcdDisplay::SetupGifContainer() {
+    ESP_LOGI(TAG, "SpiLcdDisplay: set eye gif");
+    DisplayLockGuard lock(this);
+
+    if (emotion_label_) {
+        lv_obj_del(emotion_label_);
+        emotion_label_ = nullptr;
+    }
+
+    if (chat_message_label_) {
+        lv_obj_del(chat_message_label_);
+        chat_message_label_ = nullptr;
+    }
+    if (content_) {
+        lv_obj_del(content_);
+        content_ = nullptr;
+    }
+
+    lv_obj_set_scrollbar_mode(container_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
+
+    content_ = lv_obj_create(container_);
+    lv_obj_remove_style_all(content_);  
+    lv_obj_set_size(content_, LV_HOR_RES, LV_VER_RES);  
+    lv_obj_set_style_bg_color(content_, lv_color_black(), 0);  
+    lv_obj_set_style_bg_opa(content_, LV_OPA_COVER, 0);
+    lv_obj_align(content_, LV_ALIGN_CENTER, 0, 0);      
+
+    emotion_gif_ = lv_gif_create(content_);
+    lv_obj_set_size(emotion_gif_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_align(emotion_gif_, LV_ALIGN_CENTER, 0, 0); 
+}
+#else
+void SpiLcdDisplay::SetupGifContainer()
+{
+}
+#endif
+#endif
 
 // RGB LCD实现
 RgbLcdDisplay::RgbLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,

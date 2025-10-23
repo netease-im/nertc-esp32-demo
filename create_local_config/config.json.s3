@@ -1,0 +1,13 @@
+{
+	"audio_config": {
+		"frame_size": 60
+	},
+	"license_config": {
+		"license": ""
+	},
+	"appkey":"eca23f68c66d4acfceee77c200200359",
+	"custom_config": {
+		"test_mode": true
+	},
+	"blufi_wifi" : true
+}

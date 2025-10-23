@@ -111,12 +111,17 @@ private:
         });
         boot_button_.OnDoubleClick([this]() {
             auto& app = Application::GetInstance();
-            if (app.GetDeviceState() == kDeviceStateStarting || app.GetDeviceState() == kDeviceStateWifiConfiguring) {
-                SwitchNetworkType();
-            } else if (app.GetDeviceState() == kDeviceStateWifiConfiguring) {
+            // if (app.GetDeviceState() == kDeviceStateStarting || app.GetDeviceState() == kDeviceStateWifiConfiguring) {
+            //     SwitchNetworkType();
+            // } 
+            if (app.GetDeviceState() == kDeviceStateWifiConfiguring) {
                 auto& wifi_board = static_cast<WifiBoard&>(GetCurrentBoard());
                 wifi_board.ResetWifiConfigurationWithBlufi();
             }
+        });
+
+        boot_button_.OnMultipleClick([this]() {
+            SwitchNetworkType();
         });
 
         touch_button_.OnPressDown([this]() {
@@ -143,7 +148,10 @@ private:
 
         volume_down_button_.OnClick([this]() {
             auto codec = GetAudioCodec();
-            auto volume = codec->output_volume() - 10;
+            auto cur_volume = codec->output_volume();
+            if (cur_volume <= 0)
+                cur_volume = 100;
+            auto volume = cur_volume - 10;
             if (volume < 0) {
                 volume = 0;
             }
@@ -169,7 +177,7 @@ private:
     }
 
 public:
-    CompactMl307Board() : DualNetworkBoard(ML307_TX_PIN, ML307_RX_PIN, 4096),
+    CompactMl307Board() : DualNetworkBoard(ML307_TX_PIN, ML307_RX_PIN),
         boot_button_(BOOT_BUTTON_GPIO),
         touch_button_(TOUCH_BUTTON_GPIO),
         volume_up_button_(VOLUME_UP_BUTTON_GPIO),
