@@ -244,6 +244,9 @@ choice BOARD_TYPE
     config BOARD_TYPE_ZHENGCHEN_1_54TFT_ML307
         bool "征辰科技1.54(ML307)"
         depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_ZHENGCHEN_EYE
+        bool "征辰科技AI-EYE"
+        depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_MINSI_K08_DUAL
         bool "敏思科技K08(DUAL)"
         depends on IDF_TARGET_ESP32S3
@@ -353,6 +356,75 @@ choice DISPLAY_ESP32S3_KORVO2_V3
         bool "ILI9341, 分辨率240*320"
 endchoice
 
+choice DISPLAY_TYPE_ZHENGCHEN_EYE
+    depends on BOARD_TYPE_ZHENGCHEN_EYE
+    prompt "ZHENGCHEN_EYE LCD Type"
+    default USE_LCD_240X240
+    help
+        屏幕类型选择
+    config USE_NOLCD
+        bool "不使用屏幕"
+    config USE_LCD_240X240
+        bool "分辨率240*240, 圆屏"
+    config USE_LCD_160X160
+        bool "分辨率160*160, 圆屏"
+endchoice
+
+choice NET_TYPE_ZHENGCHEN_EYE
+    depends on BOARD_TYPE_ZHENGCHEN_EYE
+    prompt "ZHENGCHEN_EYE NET Type"
+    default USE_WIFI
+    help
+        网络类型选择
+    config USE_4G
+        bool "仅仅4G网络"
+    config USE_WIFI
+        bool "仅仅WiFi网络"
+    config USE_4G_WIFI
+        bool "兼容4G和WiFi网络"
+endchoice
+
+# config AUD_MIC_DUAL_NO_REF
+#     depends on BOARD_TYPE_ZHENGCHEN_EYE
+#     bool "麦克风双声道时，不带参考信号"
+#     default n
+#     help
+#         板级麦克风配置提示：
+#         - 征辰科技AI-EYE：双路模拟麦克风（MIC1P/N，MIC2P/N），**无参考通道**
+#         - 其他板：双路模拟麦克风 + 1 路参考输入（REFP/N）
+#         请根据实际硬件走线启用/禁用此项。
+
+config ENABLE_ANIM_EMOJI
+    bool "使用动画表情（打开关闭后，需要手动关闭LV_USE_GIF）"
+    default n
+    select LV_USE_GIF
+    select LV_GIF_CACHE_DECODE_DATA
+    help
+        Enable this option to support animated emoji using LVGL and GIF decoder.
+        When enabled, LVGL GIF support and image cache will be activated.
+
+        NOTE: Once enabled, LV_USE_GIF and LV_GIF_CACHE_DECODE_DATA will stay
+        selected even if you later disable this option. To turn them off you
+        must enter menuconfig and manually un-check them.
+        
+choice DISPLAY_ANIM_EMOJI_TYPE
+    prompt "动画类型选择"
+    depends on ENABLE_ANIM_EMOJI
+    default USE_ANIM_EMOJI_OTTO
+    help
+        选择要使用的动画表情类型。
+    config USE_ANIM_EMOJI_OTTO
+        bool "OTTO 黑白动画表情"
+    config USE_ANIM_EYE_240X240_GIF1
+        bool "GC9A01, 分辨率240*240, 圆屏 (带眉毛的眼睛GIF)"
+    config USE_ANIM_EYE_160X160_GIF1
+        bool "GC9D01, 分辨率160*160, 圆屏 (带眉毛的眼睛GIF)"
+    config USE_ANIM_EYE_240X240_GIF2
+        bool "GC9A01, 分辨率240*240, 圆屏 (纯眼珠GIF)"
+    config USE_ANIM_EYE_160X160_GIF2
+        bool "GC9D01, 分辨率160*160, 圆屏 (纯眼珠GIF)" 
+endchoice
+
 config CONNECTION_TYPE_NERTC
     bool "Enanle NERTC Protocol"
     default y
@@ -361,29 +433,17 @@ config CONNECTION_TYPE_NERTC
 
 if CONNECTION_TYPE_NERTC
 
-config NERTC_APPKEY
-    string "NERTC Appkey"
-    default "test-appkey"
-    help
-        Appkey for nertc communication.
-
-config NERTC_CUSTOM_SETTING
-    string "NERTC Custom Setting"
-    default ""
-    help
-        custom setting for nertc communication.
-
 config USE_NERTC_SERVER_AEC
     bool "Enable NERTC Server-Side AEC"
     default y
     help
         启用nertc服务器端 AEC
 
-config USE_NERTC_AUDIO_DEBUGGER_WS_URL
-    string "NERTC DEBUG WS URL"
-    default ""
+config DEBUG_RUNTIME_STATS
+    bool "Enable RunTimeStats print"
+    default n
     help
-        启用音频调试功能，通过WebSocket发送音频数据
+        启用RunTimeStats打印
 
 endif
 
@@ -402,14 +462,14 @@ config USE_ESP_WAKE_WORD
 
 config USE_AFE_WAKE_WORD
     bool "Enable Wake Word Detection (AFE)"
-    default y
+    default n
     depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4) && SPIRAM
     help
         需要 ESP32 S3 与 PSRAM 支持
 
 config USE_AFE_NERTC_WAKE_WORD
     bool "Enable nertc Wake Word Detection (AFE)"
-    default n
+    default y
     depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4) && SPIRAM
     help
         需要 ESP32 S3 与 PSRAM 支持
@@ -424,7 +484,7 @@ config USE_AUDIO_PROCESSOR
 config USE_DEVICE_AEC
     bool "Enable Device-Side AEC"
     default n
-        depends on USE_AUDIO_PROCESSOR && (BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3 || BOARD_TYPE_ESP32S3_Touch_AMOLED_1_75 || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_4B || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_XC)
+        depends on USE_AUDIO_PROCESSOR && (BOARD_TYPE_ZHENGCHEN_EYE || BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3 || BOARD_TYPE_ESP32S3_Touch_AMOLED_1_75 || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_4B || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_XC)
     help
         因为性能不够，不建议和微信聊天界面风格同时开启
 
