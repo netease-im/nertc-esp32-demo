@@ -18,7 +18,7 @@ public:
     static std::string GetChipModelName();
     static esp_err_t PrintTaskCpuUsage(TickType_t xTicksToWait);
     static void PrintTaskList();
-    static void PrintHeapStats();
+    static std::string PrintHeapStats();
 };
 
 #endif // _SYSTEM_INFO_H_

@@ -128,6 +128,7 @@ std::string Board::GetJson() {
     auto app_desc = esp_app_get_description();
     json += "\"name\":\"" + std::string(app_desc->project_name) + "\",";
     json += "\"version\":\"" + std::string(app_desc->version) + "\",";
+    json += "\"board_name\":\"" + GetBoardName() + "\",";
     json += "\"compile_time\":\"" + std::string(app_desc->date) + "T" + std::string(app_desc->time) + "Z\",";
     json += "\"idf_version\":\"" + std::string(app_desc->idf_ver) + "\",";
 

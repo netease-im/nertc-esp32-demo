@@ -17,6 +17,8 @@ public:
     void OnPressDown(std::function<void()> callback);
     void OnPressUp(std::function<void()> callback);
     void OnLongPress(std::function<void()> callback);
+    void OnLongPressHold(std::function<void()> callback);
+    void OnLongPressUp(std::function<void()> callback);
     void OnClick(std::function<void()> callback);
     void OnDoubleClick(std::function<void()> callback);
     void OnMultipleClick(std::function<void()> callback, uint8_t click_count = 3);
@@ -30,6 +32,8 @@ protected:
     std::function<void()> on_press_down_;
     std::function<void()> on_press_up_;
     std::function<void()> on_long_press_;
+    std::function<void()> on_long_press_hold_;
+    std::function<void()> on_long_press_up_;
     std::function<void()> on_click_;
     std::function<void()> on_double_click_;
     std::function<void()> on_multiple_click_;

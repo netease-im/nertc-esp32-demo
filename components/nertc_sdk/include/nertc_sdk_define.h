@@ -75,6 +75,7 @@ typedef enum {
 typedef struct nertc_sdk_optional_config {
   nertc_sdk_device_level_e device_performance_level;
   bool enable_server_aec;
+  bool enable_ptt_mode;
   nertc_sdk_ext_net_handle_t* ext_net_handle; // 用户自定义的网络接口
   const char* custom_config;
 } nertc_sdk_optional_config_t;

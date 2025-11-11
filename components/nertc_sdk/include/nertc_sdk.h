@@ -164,6 +164,24 @@ NERTC_SDK_API int nertc_stop_ai(nertc_sdk_engine_t engine);
 NERTC_SDK_API int nertc_ai_manual_interrupt(nertc_sdk_engine_t engine);
 
 /**
+ * @brief 手动开启音频识别（按键模式专用）
+ * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
+ * @return 方法调用结果：<br>
+ *         -   0：成功 <br>
+ *         - 非0：失败 <br>
+ */
+NERTC_SDK_API int nertc_ai_manual_start_listen(nertc_sdk_engine_t engine);
+
+/**
+ * @brief 手动关闭音频识别（按键模式专用）
+ * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
+ * @return 方法调用结果：<br>
+ *         -   0：成功 <br>
+ *         - 非0：失败 <br>
+ */
+NERTC_SDK_API int nertc_ai_manual_stop_listen(nertc_sdk_engine_t engine);
+
+/**
  * @brief 挂断电话
  * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
  * @return 方法调用结果：<br>

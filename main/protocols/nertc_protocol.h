@@ -75,6 +75,7 @@ public:
 #endif
 private:
     std::string local_config_appkey_;
+    bool asr_enabled_ = true;
 };
 
 #endif

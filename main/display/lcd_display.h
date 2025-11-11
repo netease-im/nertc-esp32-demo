@@ -7,7 +7,12 @@
 #include <esp_lcd_panel_ops.h>
 #include <font_emoji.h>
 
+#include <vector>
 #include <atomic>
+
+#if defined(CONFIG_ENABLE_ANIM_EMOJI)
+#include "gif_player.h"
+#endif
 
 // Theme color structure
 struct ThemeColors {
@@ -87,13 +92,16 @@ public:
 #if defined(CONFIG_ENABLE_ANIM_EMOJI)
     // 重写表情设置方法
     virtual void SetEmotion(const char* emotion) override;
+    virtual void SetEmotionForce(const char* emotion, bool force = false) override;
 
     // 重写聊天消息设置方法
     virtual void SetChatMessage(const char* role, const char* content) override;
 private:
     void SetupGifContainer();
+    void SetMessage(const char* role, const char* content);
 
-    lv_obj_t* emotion_gif_ = nullptr;  ///< GIF表情组件
+    GifPlayer* gif_player_ = nullptr;   ///< GIF播放器实例
+    bool force_emotion_ = false;        ///< 是否强制显示表情
 #endif
 };
 
