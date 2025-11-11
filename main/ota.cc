@@ -207,7 +207,7 @@ bool Ota::CheckVersion() {
             firmware_url_ = url->valuestring;
         }
 
-        if (cJSON_IsString(version) && cJSON_IsString(url)) {
+        if (!firmware_url_.empty() && cJSON_IsString(version) && cJSON_IsString(url)) {
             // Check if the version is newer, for example, 0.1.0 is newer than 0.0.1
             has_new_version_ = IsNewVersionAvailable(current_version_, firmware_version_);
             if (has_new_version_) {
@@ -249,16 +249,39 @@ void Ota::MarkCurrentVersionValid() {
     }
 }
 
+bool GetNextSafePartition(const esp_partition_t **out)
+{
+    const esp_partition_t *p = esp_ota_get_next_update_partition(NULL); // 第一候选
+    if (p == nullptr) return false;
+
+    /* 正好是我们想避开的 ota_2 */
+    if (p->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_2) {
+        ESP_LOGW(TAG, "ota_2(blufi) skipped, try next...");
+        p = esp_ota_get_next_update_partition(p);   // 再轮一次
+        if (p == nullptr) return false;
+    }
+    *out = p;
+    return true;
+}
+
 void Ota::Upgrade(const std::string& firmware_url) {
     ESP_LOGI(TAG, "Upgrading firmware from %s", firmware_url.c_str());
     esp_ota_handle_t update_handle = 0;
-    auto update_partition = esp_ota_get_next_update_partition(NULL);
-    if (update_partition == NULL) {
-        ESP_LOGE(TAG, "Failed to get update partition");
+    // auto update_partition = esp_ota_get_next_update_partition(NULL);
+    // if (update_partition == NULL) {
+    //     ESP_LOGE(TAG, "Failed to get update partition");
+    //     return;
+    // }
+
+    const esp_partition_t *update_partition;
+    if (!GetNextSafePartition(&update_partition)) {
+        ESP_LOGE(TAG, "No available OTA slot (ota_0/ota_1)");
         return;
     }
 
-    ESP_LOGI(TAG, "Writing to partition %s at offset 0x%lx", update_partition->label, update_partition->address);
+    ESP_LOGI(TAG, "Writing to partition %s at offset 0x%lx  subtype:%d ESP_PARTITION_SUBTYPE_APP_OTA_1:%d ESP_PARTITION_SUBTYPE_APP_OTA_2:%d", 
+        update_partition->label, update_partition->address, update_partition->subtype, ESP_PARTITION_SUBTYPE_APP_OTA_1, ESP_PARTITION_SUBTYPE_APP_OTA_2);
+
     bool image_header_checked = false;
     std::string image_header;
 

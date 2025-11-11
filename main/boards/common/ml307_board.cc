@@ -60,7 +60,7 @@ void Ml307Board::StartNetwork() {
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
 
-    application.PlaySound(Lang::Sounds::P3_CONNECTED);
+    application.PlaySound(Lang::Sounds::P3_4G_CONNECTED);
 
     // Print the ML307 modem information
     std::string module_revision = modem_->GetModuleRevision();
@@ -200,7 +200,11 @@ std::string Ml307Board::GetBoardName() {
     Settings settings("board", true);
     std::string name = settings.GetString("name");
     if (name.empty()) {
-        name = std::string(NERTC_BOARD_NAME) + "-" + modem_->GetImei();
+        std::string imei = modem_->GetImei();
+        if (imei.size() > 6) {
+            imei = imei.substr(imei.size() - 6);
+        }
+        name = std::string(NERTC_BOARD_NAME) + "-" + imei;
         settings.SetString("name", name);
     }
     ESP_LOGI(TAG, "GetBoardName name=%s", name.c_str());

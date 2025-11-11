@@ -10,7 +10,7 @@
 
 class BackgroundTask {
 public:
-    BackgroundTask(uint32_t stack_size = 4096 * 2);
+    BackgroundTask(uint32_t stack_size = 4096 * 2, const char* name = "bg_task");
     ~BackgroundTask();
 
     void Schedule(std::function<void()> callback);
@@ -22,6 +22,7 @@ private:
     std::condition_variable condition_variable_;
     TaskHandle_t background_task_handle_ = nullptr;
     std::atomic<size_t> active_tasks_{0};
+    std::string name_;
 
     void BackgroundTaskLoop();
 };

@@ -5,11 +5,12 @@
 
 #define TAG "BackgroundTask"
 
-BackgroundTask::BackgroundTask(uint32_t stack_size) {
+BackgroundTask::BackgroundTask(uint32_t stack_size, const char* name) {
+    name_ = name;
     xTaskCreate([](void* arg) {
         BackgroundTask* task = (BackgroundTask*)arg;
         task->BackgroundTaskLoop();
-    }, "background_task", stack_size, this, 2, &background_task_handle_);
+    }, name, stack_size, this, 2, &background_task_handle_);
 }
 
 BackgroundTask::~BackgroundTask() {
@@ -23,7 +24,7 @@ void BackgroundTask::Schedule(std::function<void()> callback) {
     if (active_tasks_ >= 30) {
         int free_sram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
         if (free_sram < 10000) {
-            ESP_LOGW(TAG, "active_tasks_ == %u, free_sram == %u", active_tasks_.load(), free_sram);
+            ESP_LOGW(TAG, "%s, active_tasks_ == %u, free_sram == %u", name_.c_str(), active_tasks_.load(), free_sram);
         }
     }
     active_tasks_++;
@@ -48,7 +49,7 @@ void BackgroundTask::WaitForCompletion() {
 }
 
 void BackgroundTask::BackgroundTaskLoop() {
-    ESP_LOGI(TAG, "background_task started");
+    ESP_LOGI(TAG, "%s started", name_.c_str());
     while (true) {
         std::unique_lock<std::mutex> lock(mutex_);
         condition_variable_.wait(lock, [this]() { return !main_tasks_.empty(); });

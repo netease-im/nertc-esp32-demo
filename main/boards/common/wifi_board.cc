@@ -69,7 +69,7 @@ void WifiBoard::EnterWifiConfigMode() {
     hint += "\n\n";
     
     // 播报配置 WiFi 的提示
-    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "", Lang::Sounds::P3_WIFICONFIG);
+    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "wifi", Lang::Sounds::P3_WIFICONFIG);
     
     // Wait forever until reset after configuration
     while (true) {
@@ -197,7 +197,7 @@ void WifiBoard::ResetWifiConfigurationWithBlufi() {
     std::string hint = "进入蓝牙配网模式";
     hint += "\n\n";
     auto& application = Application::GetInstance();
-    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "", Lang::Sounds::P3_BLUFI);
+    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "wifi", Lang::Sounds::P3_BLUFI);
 
     vTaskDelay(pdMS_TO_TICKS(3000));
 

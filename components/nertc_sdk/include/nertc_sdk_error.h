@@ -61,8 +61,11 @@ typedef enum {
   /* 许可证未激活 */
   NERTC_SDK_ERR_LICENSE_NOT_ACTIVATED                     = 30064,
 
+    /** 加入房间失败 */
+  NERTC_SDK_ERR_JOIN_CHANNEL_FAILED                       = 30103,
+
   /** 用户未找到 */
-  NERTC_SDK_ERR_USER_NOT_FOUND                            = 30105,       
+  NERTC_SDK_ERR_USER_NOT_FOUND                            = 30105,  
 
   /** 媒体连接断开 */
   NERTC_SDK_ERR_MEDIA_DISCONNECTED                        = 30204, 

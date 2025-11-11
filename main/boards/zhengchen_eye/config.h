@@ -5,10 +5,14 @@
 #include <driver/gpio.h>
 
 //音频输入和输出的采样率
-#define AUDIO_INPUT_SAMPLE_RATE  24000
-#define AUDIO_OUTPUT_SAMPLE_RATE 24000
+#define AUDIO_INPUT_SAMPLE_RATE  16000
+#define AUDIO_OUTPUT_SAMPLE_RATE 16000
 
+#if CONFIG_USE_DEVICE_AEC
 #define AUDIO_INPUT_REFERENCE    true
+#else
+#define AUDIO_INPUT_REFERENCE    false
+#endif
 
 #define AUDIO_I2S_GPIO_MCLK GPIO_NUM_38
 #define AUDIO_I2S_GPIO_WS GPIO_NUM_13
@@ -37,9 +41,11 @@
 #if CONFIG_USE_LCD_240X240
 #define DISPLAY_WIDTH   240
 #define DISPLAY_HEIGHT  240
+#define DISPLAY_INVERT_COLOR    true
 #else
 #define DISPLAY_WIDTH   160
 #define DISPLAY_HEIGHT  160
+#define DISPLAY_INVERT_COLOR    false
 #endif
 
 #define DISPLAY_SWAP_XY  false
@@ -54,5 +60,21 @@
 
 #define ML307_RX_PIN GPIO_NUM_48
 #define ML307_TX_PIN GPIO_NUM_47
+
+// 电机控制：GPIO21 低电平转动，持续时间由宏控制（毫秒）
+#define MOTOR_GPIO             GPIO_NUM_21
+#define MOTOR_ON_DURATION_MS   1500
+
+// MPU6050 陀螺仪配置
+#define MPU6050_SCL_GPIO        GPIO_NUM_41
+#define MPU6050_SDA_GPIO        GPIO_NUM_39
+#define MPU6050_I2C_ADDR        0x68
+#define MPU6050_MASTER_NUM      I2C_NUM_1  /*!< 改为 I2C1，避免与 I2C0（音频）冲突 */
+#define MPU6050_MASTER_FREQ_HZ  100000 /*!< I2C master clock frequency */
+// 摇晃阈值 加速度模长超过 2.2g 或相邻两次采样模长差超过 0.7g”视为一次摇晃
+#define MPU6050_SHAKE_THRESHOLD         0.7f
+#define MPU6050_SHAKE_ACCEL_THRESHOLD   2.2f
+// 设置了 2 秒冷却时间，避免一次剧烈摇晃触发多次对话
+#define MPU6050_SHAKE_COOLDOWN_TIME     500
 
 #endif // _BOARD_CONFIG_H_
