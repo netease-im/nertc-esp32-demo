@@ -213,7 +213,7 @@ file(GLOB BOARD_SOURCES
 list(APPEND SOURCES ${BOARD_SOURCES})
 
 if(CONFIG_CONNECTION_TYPE_NERTC)
-    list(APPEND INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/nertc_sdk/include")
+    list(APPEND INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../components/nertc_sdk/include")
     list(APPEND SOURCES "protocols/nertc_protocol.cc")
     list(APPEND SOURCES "protocols/nertc_external_network.cc")
 endif()
