@@ -158,6 +158,16 @@ private:
             GetAudioCodec()->SetOutputVolume(0);
             GetDisplay()->ShowNotification(Lang::Strings::MUTED);
         });
+
+        boot_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "OnLongPress");
+            Application::GetInstance().SetDeviceState(kDeviceStateListening);
+        });
+
+        boot_button_.OnLongPressUp([this]() {
+            ESP_LOGI(TAG, "OnLongPressUp");
+            Application::GetInstance().StopListening();
+        });
     }
 
     // 物联网初始化，逐步迁移到 MCP 协议

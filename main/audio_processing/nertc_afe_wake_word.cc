@@ -162,7 +162,11 @@ void NertcAfeWakeWord::Initialize(AudioCodec* codec) {
     }
 
     nertc_wake_word_ = nertc_wakeup_create(&config); 
+#if defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS) 
+    nertc_wakeup_init(nertc_wake_word_, 1, 0);
+#else
     nertc_wakeup_init(nertc_wake_word_, codec_->input_channels(), codec_->input_reference());
+#endif
     xTaskCreate([](void* arg) {
         auto this_ = (NertcAfeWakeWord*)arg;
         this_->task_created_ = true;
@@ -222,6 +226,8 @@ void NertcAfeWakeWord::AudioDetectionTask() {
     {
         xEventGroupWaitBits(event_group_, DETECTION_RUNNING_EVENT, pdFALSE, pdTRUE, portMAX_DELAY);
         nertc_wakeup_detect(nertc_wake_word_);
+        
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 

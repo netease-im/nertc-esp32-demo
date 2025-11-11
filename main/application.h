@@ -56,7 +56,12 @@ enum DeviceState {
 #define OPUS_FRAME_DURATION_MS 60
 #endif
 
-#define MAX_AUDIO_PACKETS_IN_QUEUE (600 / OPUS_FRAME_DURATION_MS)
+#if defined(CONFIG_USE_DEVICE_AEC) && !defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS)
+#define MAX_ENCODE_PACKETS_IN_QUEUE (960 / OPUS_FRAME_DURATION_MS)
+#else
+#define MAX_ENCODE_PACKETS_IN_QUEUE (600 / OPUS_FRAME_DURATION_MS)
+#endif
+#define MAX_DECODE_PACKETS_IN_QUEUE (600 / OPUS_FRAME_DURATION_MS)
 
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
 #define NERTC_BOARD_NAME "yunxin"
@@ -92,6 +97,10 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     BackgroundTask* GetBackgroundTask() const { return background_task_; }
     void TouchActive(int value_head, int value_body);
+    void Shake(float mag, float delta, bool is_strong);
+    void LiftUp();
+    void StartRing();
+    void StopRing();
 
 private:
     Application();
@@ -111,6 +120,7 @@ private:
     EventGroupHandle_t event_group_ = nullptr;
     esp_timer_handle_t clock_timer_handle_ = nullptr;
     volatile DeviceState device_state_ = kDeviceStateUnknown;
+    bool touch_active_ = false;
     ListeningMode listening_mode_ = kListeningModeAutoStop;
     AecMode aec_mode_ = kAecOff;
 
@@ -134,6 +144,11 @@ private:
 
     std::unique_ptr<OpusEncoderWrapper> opus_encoder_;
     std::unique_ptr<OpusDecoderWrapper> opus_decoder_;
+#ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
+    std::unique_ptr<OpusDecoderWrapper> opus_decoder2_;
+    std::vector<int16_t> wake_pcm_;
+    std::atomic<int> wake_task_count_ = 0;
+#endif
 
     OpusResampler input_resampler_;
     OpusResampler reference_resampler_;
@@ -145,11 +160,21 @@ private:
 #endif
     void MainEventLoop();
     void OnAudioInput();
+#ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
+    void OnAudioInputDecodeForWakeWord();
+#endif
     void OnAudioOutput();
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
     void OnNertcAudioOutput(AudioStreamPacket&& packet);
 #endif
     bool ReadAudio(std::vector<int16_t>& data, int sample_rate, int samples);
+#ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
+    bool ReadAudioEncoded(std::vector<uint8_t> &opus, int sample_rate, int samples);
+#endif
+    void WriteAudio(std::vector<int16_t> &data, int sample_rate);
+#ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
+    void WriteAudioEncoded(std::vector<uint8_t> &opus, int sample_rate);
+#endif
     void ResetDecoder();
     void SetDecodeSampleRate(int sample_rate, int frame_duration);
 #if defined(CONFIG_CONNECTION_TYPE_NERTC) && defined(CONFIG_USE_NERTC_SERVER_AEC)
@@ -164,6 +189,13 @@ private:
     int touch_count_ = 0;
     bool ai_sleep_ = false;
     char *buffer_ = nullptr;
+    
+    void TouchRestoreTimer(int duration);
+    static void TouchRestoreTimerCb(TimerHandle_t xTimer);
+    void TouchRestore();
+    TimerHandle_t touch_timer_ = nullptr;
+    static void RingTimerCb(TimerHandle_t xTimer);
+    TimerHandle_t ring_timer_ = nullptr;
 };
 
 #endif // _APPLICATION_H_

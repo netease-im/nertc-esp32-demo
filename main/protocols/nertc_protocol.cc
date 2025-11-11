@@ -3,6 +3,7 @@
 #include "nertc_protocol.h"
 #include "nertc_external_network.h"
 #include "board.h"
+#include "display.h"
 #include "system_info.h"
 #include <esp_random.h>
 #include <esp_log.h>
@@ -48,6 +49,11 @@ NeRtcProtocol::NeRtcProtocol() {
         if (custom_config && cJSON_IsObject(custom_config)) {
             custom_config_string = cJSON_Print(custom_config);
             ESP_LOGI(TAG, "local config set custom_config to %s", custom_config_string.c_str());
+            cJSON* asr = cJSON_GetObjectItem(custom_config, "asr");
+            if (asr && cJSON_IsBool(asr)) {
+                asr_enabled_ = asr->valueint;
+                ESP_LOGI(TAG, "local config set asr to %d", asr_enabled_?1:0);
+            }
         }
         cJSON* audio_config = cJSON_GetObjectItem(config_json, "audio_config");
         if (audio_config) {
@@ -112,11 +118,20 @@ NeRtcProtocol::NeRtcProtocol() {
 #else
     nertc_sdk_config.optional_config.device_performance_level = NERTC_SDK_DEVICE_LEVEL_NORMAL;
 #endif
+
 #if CONFIG_USE_NERTC_SERVER_AEC
     nertc_sdk_config.optional_config.enable_server_aec = true;
 #else
     nertc_sdk_config.optional_config.enable_server_aec = false;
 #endif
+
+#if CONFIG_USE_NERTC_PTT_MODE
+    nertc_sdk_config.optional_config.enable_ptt_mode = true;
+    nertc_sdk_config.optional_config.enable_server_aec = false;
+#else
+    nertc_sdk_config.optional_config.enable_ptt_mode = false;
+#endif
+
     if (Board::GetInstance().GetBoardType() == "ml307") { //4G模组，需要外部网络IO
         NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
         nertc_sdk_config.optional_config.ext_net_handle = ext_net->GetHandle();
@@ -228,12 +243,13 @@ bool NeRtcProtocol::OpenAudioChannel() {
         ESP_LOGE(TAG, "Start AI failed, error: %d", ret);
         return false;
     }
-
-    nertc_sdk_asr_caption_config_t asr_config;
-    ret = nertc_start_asr_caption(engine_, &asr_config);
-    if (ret != 0) {
-        ESP_LOGE(TAG, "Start ASR caption failed, error: %d", ret);
-        return false;
+    if (asr_enabled_) {
+        nertc_sdk_asr_caption_config_t asr_config;
+        ret = nertc_start_asr_caption(engine_, &asr_config);
+        if (ret != 0) {
+            ESP_LOGE(TAG, "Start ASR caption failed, error: %d", ret);
+            return false;
+        }
     }
 
     if (on_audio_channel_opened_ != nullptr) {
@@ -325,6 +341,8 @@ void NeRtcProtocol::SendAecReferenceAudio(const AudioStreamPacket& packet) {
 void NeRtcProtocol::SendMcpMessage(const std::string& message) {
     if (!engine_ || !join_.load())
         return;
+    
+    ESP_LOGI(TAG, "SendMcpMessage:%s", message.c_str());
     nertc_ai_llm_prompt(engine_, message.c_str(), 1);
 }
 
@@ -570,6 +588,10 @@ void NeRtcProtocol::OnUserJoined(const nertc_sdk_callback_context_t* ctx, const 
     NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(ctx->user_data);
     if (!instance)
         return;
+        
+    if (instance->phone_call_suspend_) {
+        Application::GetInstance().StopRing();
+    }
 }
 
 void NeRtcProtocol::OnUserLeft(const nertc_sdk_callback_context_t* ctx, const nertc_sdk_user_info* user, int reason) {
@@ -617,6 +639,10 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
     NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(ctx->user_data);
     if (!instance)
         return;
+    if (!instance->IsAudioChannelOpened()) {
+        ESP_LOGE(TAG, "NERtc OnAiData: audio channel is not opened");
+        return;
+    }
 
     if (strncmp(type_str, "event", type_len) == 0) {
         cJSON* data_json = cJSON_Parse(data_str);
@@ -637,6 +663,9 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
             if (instance->on_incoming_json_) instance->on_incoming_json_(state_json);
             cJSON_Delete(state_json);
             cJSON_Delete(data_json);
+            if (event_str == "audio.agent.speech_stopped" && instance->phone_call_suspend_) {
+                 Application::GetInstance().StartRing();
+            }
             return;
         }
         if (event_str.find("conversation.") == 0) {
@@ -645,11 +674,14 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
                 // cJSON* state_json = instance->BuildApplicationTtsStateProtocol("audio.agent.speech_started");
                 // if (instance->on_incoming_json_) instance->on_incoming_json_(state_json);
                 // cJSON_Delete(state_json);
+                Board::GetInstance().GetDisplay()->SetEmotionForce("call", true);
             } else if (event_str == "conversation.resume") {
                 instance->phone_call_suspend_ = false;
                 // cJSON* state_json = instance->BuildApplicationTtsStateProtocol("audio.agent.speech_stopped");
                 // if (instance->on_incoming_json_) instance->on_incoming_json_(state_json);
                 // cJSON_Delete(state_json);
+                Board::GetInstance().GetDisplay()->SetEmotionForce("neutral", false);
+                Application::GetInstance().StopRing();
             }
             ESP_LOGI(TAG, "phone_call_suspend_:%d", instance->phone_call_suspend_);
             cJSON_Delete(data_json);
@@ -784,6 +816,19 @@ bool NeRtcProtocol::SendText(const std::string& text) {
             cJSON* state_json = BuildApplicationTtsStateProtocol("audio.agent.speech_stopped");
             if (on_incoming_json_) on_incoming_json_(state_json);
             cJSON_Delete(state_json);
+        }
+    } else if (type == "listen") {
+        cJSON* state_item = cJSON_GetObjectItem(data_json, "state");
+        if (state_item == nullptr || !cJSON_IsString(state_item)) {
+            ESP_LOGE(TAG, "type is null");
+            cJSON_Delete(data_json);
+            return false;
+        }
+        std::string state = state_item->valuestring;
+        if (state == "start") {
+            nertc_ai_manual_start_listen(engine_);
+        } else if (state == "stop") {
+            nertc_ai_manual_stop_listen(engine_);
         }
     }
 

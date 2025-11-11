@@ -153,8 +153,13 @@ void SystemInfo::PrintTaskList() {
     ESP_LOGI(TAG, "Task list: \n%s", buffer);
 }
 
-void SystemInfo::PrintHeapStats() {
+std::string SystemInfo::PrintHeapStats() {
+    std::string result;
     int free_sram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     int min_free_sram = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
-    ESP_LOGI(TAG, "free sram: %u minimal sram: %u", free_sram, min_free_sram);
+    int free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    int min_free_psram = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+    result = "free sram: " + std::to_string(free_sram) + " minimal sram: " + std::to_string(min_free_sram) + " free_psram: " + std::to_string(free_psram) + " min_free_psram: " + std::to_string(min_free_psram);
+    return result;
+    // ESP_LOGI(TAG, "free sram: %u minimal sram: %u free_psram: %u min_free_psram: %u", free_sram, min_free_sram, free_psram, min_free_psram);
 }

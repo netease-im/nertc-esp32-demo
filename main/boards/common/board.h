@@ -51,6 +51,8 @@ public:
     virtual std::string GetBoardJson() = 0;
     virtual std::string GetDeviceStatusJson() = 0;
     virtual std::string GetBoardName() = 0;
+    virtual void OnEmotion(const char* emotion) {}
+    virtual void MotorStartKick(int duration) {}
 };
 
 #define DECLARE_BOARD(BOARD_CLASS_NAME) \
