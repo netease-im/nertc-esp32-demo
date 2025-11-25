@@ -10,6 +10,7 @@ public:
     virtual bool SetHMirror(bool enabled) = 0;
     virtual bool SetVFlip(bool enabled) = 0;
     virtual std::string Explain(const std::string& question) = 0;
+    virtual bool GetCapturedJpeg(uint8_t*& data, size_t& len) = 0;
 };
 
 #endif // CAMERA_H

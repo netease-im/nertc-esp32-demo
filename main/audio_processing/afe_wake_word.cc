@@ -152,7 +152,7 @@ void AfeWakeWord::EncodeWakeWordData() {
         auto this_ = (AfeWakeWord*)arg;
         {
             auto start_time = esp_timer_get_time();
-            auto encoder = std::make_unique<OpusEncoderWrapper>(16000, 1, OPUS_FRAME_DURATION_MS);
+            auto encoder = std::make_unique<OpusEncoderWrapper>(16000, 1, Application::GetInstance().OpusFrameDurationMs());
             encoder->SetComplexity(0); // 0 is the fastest
 
             int packets = 0;

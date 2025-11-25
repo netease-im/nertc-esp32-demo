@@ -50,18 +50,6 @@ enum DeviceState {
     kDeviceStateActivating,
     kDeviceStateFatalError
 };
-#ifdef CONFIG_IDF_TARGET_ESP32C3 
-#define OPUS_FRAME_DURATION_MS 20
-#else
-#define OPUS_FRAME_DURATION_MS 60
-#endif
-
-#if defined(CONFIG_USE_DEVICE_AEC) && !defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS)
-#define MAX_ENCODE_PACKETS_IN_QUEUE (960 / OPUS_FRAME_DURATION_MS)
-#else
-#define MAX_ENCODE_PACKETS_IN_QUEUE (600 / OPUS_FRAME_DURATION_MS)
-#endif
-#define MAX_DECODE_PACKETS_IN_QUEUE (600 / OPUS_FRAME_DURATION_MS)
 
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
 #define NERTC_BOARD_NAME "yunxin"
@@ -76,6 +64,7 @@ public:
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
 
+    int OpusFrameDurationMs();
     void Start();
     DeviceState GetDeviceState() const { return device_state_; }
     bool IsVoiceDetected() const { return voice_detected_; }
@@ -85,6 +74,8 @@ public:
     void DismissAlert();
     void AbortSpeaking(AbortReason reason);
     void ToggleChatState();
+    void TakePhoto();
+    void SendMcpNetworkImage();
     void StartListening();
     void StopListening();
     void UpdateIotStates();
@@ -105,6 +96,7 @@ public:
 private:
     Application();
     ~Application();
+    void ResetOpusParameters();
 
     std::unique_ptr<WakeWord> wake_word_;
     std::unique_ptr<AudioProcessor> audio_processor_;
@@ -127,6 +119,7 @@ private:
     bool aborted_ = false;
     bool voice_detected_ = false;
     bool busy_decoding_audio_ = false;
+    bool sound_play_adding_ = false;
     int clock_ticks_ = 0;
     TaskHandle_t check_new_version_task_handle_ = nullptr;
 
@@ -149,6 +142,9 @@ private:
     std::vector<int16_t> wake_pcm_;
     std::atomic<int> wake_task_count_ = 0;
 #endif
+    int opus_frame_duration_ = 20;
+    int max_opus_decode_packets_size_ = 15;
+    int max_opus_encode_packets_size_ = 15;
 
     OpusResampler input_resampler_;
     OpusResampler reference_resampler_;
@@ -196,6 +192,7 @@ private:
     TimerHandle_t touch_timer_ = nullptr;
     static void RingTimerCb(TimerHandle_t xTimer);
     TimerHandle_t ring_timer_ = nullptr;
+    bool ringing_ = false;
 };
 
 #endif // _APPLICATION_H_

@@ -89,6 +89,16 @@ private:
             }
             app.ToggleChatState();
         });
+
+        boot_button_.OnDoubleClick([this]() {
+            auto& app = Application::GetInstance();
+            app.TakePhoto();
+        });
+
+        boot_button_.OnLongPress([this]() {
+            auto& app = Application::GetInstance();
+            app.SendMcpNetworkImage();
+        });
     }
 
     void InitializeDisplay() {

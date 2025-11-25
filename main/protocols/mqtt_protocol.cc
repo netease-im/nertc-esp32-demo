@@ -257,7 +257,7 @@ std::string MqttProtocol::GetHelloMessage() {
     cJSON_AddStringToObject(audio_params, "format", "opus");
     cJSON_AddNumberToObject(audio_params, "sample_rate", 16000);
     cJSON_AddNumberToObject(audio_params, "channels", 1);
-    cJSON_AddNumberToObject(audio_params, "frame_duration", OPUS_FRAME_DURATION_MS);
+    cJSON_AddNumberToObject(audio_params, "frame_duration", Application::GetInstance().OpusFrameDurationMs());
     cJSON_AddItemToObject(root, "audio_params", audio_params);
     auto json_str = cJSON_PrintUnformatted(root);
     std::string message(json_str);

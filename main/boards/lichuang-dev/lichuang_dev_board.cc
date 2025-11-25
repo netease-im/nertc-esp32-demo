@@ -255,6 +255,7 @@ public:
         thing_manager.AddThing(iot::CreateThing("Screen"));
 #endif
         GetBacklight()->RestoreBrightness();
+        GetAudioCodec()->SetOutputVolume(100);
     }
 
     virtual AudioCodec* GetAudioCodec() override {

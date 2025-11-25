@@ -471,6 +471,7 @@ private:
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
+            ESP_LOGW(TAG, "boot_button_.OnClick");
             auto& app = Application::GetInstance();
             if (GetNetworkType() == NetworkType::WIFI) {
                 if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
@@ -490,10 +491,11 @@ private:
         });
 #endif
         boot_button_.OnDoubleClick([this]() {
-            if (GetNetworkType() == NetworkType::WIFI) {
-                auto& wifi_board = static_cast<WifiBoard&>(GetCurrentBoard());
-                wifi_board.ResetWifiConfiguration();
-            }
+            ESP_LOGW(TAG, "boot_button_.OnDoubleClick");
+            // if (GetNetworkType() == NetworkType::WIFI) {
+            //     auto& wifi_board = static_cast<WifiBoard&>(GetCurrentBoard());
+            //     wifi_board.ResetWifiConfiguration();
+            // }
             
         });
 
@@ -574,10 +576,10 @@ private:
 
 public:
     zhengchen_eye() : 
-#if CONFIG_USE_WIFI
-        DualNetworkBoard(ML307_TX_PIN, ML307_RX_PIN, GPIO_NUM_NC, 0),
-#else
-        DualNetworkBoard(ML307_TX_PIN, ML307_RX_PIN, GPIO_NUM_NC, 0),
+#if defined(CONFIG_USE_WIFI) || defined(CONFIG_USE_4G_WIFI)
+    DualNetworkBoard(ML307_TX_PIN, ML307_RX_PIN, GPIO_NUM_NC, 0),
+#else 
+    DualNetworkBoard(ML307_TX_PIN, ML307_RX_PIN, GPIO_NUM_NC, 1),
 #endif
         boot_button_(BOOT_BUTTON_GPIO){
         InitializePowerManager();

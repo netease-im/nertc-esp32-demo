@@ -83,6 +83,7 @@ public:
     virtual void SendIotDescriptors(const std::string& descriptors);
     virtual void SendIotStates(const std::string& states);
     virtual void SendMcpMessage(const std::string& message);
+    virtual void SendMcpImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type);
 
 protected:
     std::function<void(const cJSON* root)> on_incoming_json_;

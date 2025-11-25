@@ -18,7 +18,7 @@ endif()
 # 检查是否找到GIF源文件
 list(LENGTH LZ4_FILES GIF_COUNT)
 if(GIF_COUNT EQUAL 0)
-    message(WARNING "未找到GIF源文件，请确保src目录中包含对应资源的.c文件")
+    message(WARNING "未找到GIF源文件，请确保src目录中包含对应资源的文件")
 endif()
 # 追加 src/ 根目录下的 .c 文件
 file(GLOB EXTRA_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")

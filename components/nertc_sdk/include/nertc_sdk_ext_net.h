@@ -1,9 +1,10 @@
 #ifndef __NERTC_SDK_EXT_NET_H__
 #define __NERTC_SDK_EXT_NET_H__
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+
 #include "nertc_sdk_error.h"
 
 #ifdef __cplusplus
@@ -46,34 +47,34 @@ typedef int (*udp_recv_func)(udp_handle handle, char* buffer, size_t buffer_size
 
 // 网络接口函数表
 typedef struct {
-    // HTTP 相关函数指针
-    http_create_func create_http;
-    http_destroy_func destroy_http;
-    http_set_header_func set_header;
-    http_open_func open;
-    http_close_func close;
-    http_get_status_code_func get_status_code;
-    http_get_response_header_func get_response_header;
-    http_get_body_length_func get_body_length;
-    http_get_body_func get_body;
+  // HTTP 相关函数指针
+  http_create_func create_http;
+  http_destroy_func destroy_http;
+  http_set_header_func set_header;
+  http_open_func open;
+  http_close_func close;
+  http_get_status_code_func get_status_code;
+  http_get_response_header_func get_response_header;
+  http_get_body_length_func get_body_length;
+  http_get_body_func get_body;
 
-    // TCP 相关函数指针
-    tcp_create_func create_tcp;
-    tcp_set_socket_opt_func set_socket_opt_tcp;
-    tcp_destroy_func destroy_tcp;
-    tcp_connect_func connect_tcp;
-    tcp_disconnect_func disconnect_tcp;
-    tcp_send_func send_tcp;
-    tcp_recv_func recv_tcp;
+  // TCP 相关函数指针
+  tcp_create_func create_tcp;
+  tcp_set_socket_opt_func set_socket_opt_tcp;
+  tcp_destroy_func destroy_tcp;
+  tcp_connect_func connect_tcp;
+  tcp_disconnect_func disconnect_tcp;
+  tcp_send_func send_tcp;
+  tcp_recv_func recv_tcp;
 
-    // UDP 相关函数指针
-    udp_create_func create_udp;
-    udp_set_socket_opt_func set_socket_opt_udp;
-    udp_destroy_func destroy_udp;
-    udp_connect_func connect_udp;
-    udp_disconnect_func disconnect_udp;
-    udp_send_func send_udp;
-    udp_recv_func recv_udp;
+  // UDP 相关函数指针
+  udp_create_func create_udp;
+  udp_set_socket_opt_func set_socket_opt_udp;
+  udp_destroy_func destroy_udp;
+  udp_connect_func connect_udp;
+  udp_disconnect_func disconnect_udp;
+  udp_send_func send_udp;
+  udp_recv_func recv_udp;
 
 } nertc_sdk_ext_net_handle_t;
 
@@ -81,4 +82,4 @@ typedef struct {
 }
 #endif
 
-#endif // __NERTC_SDK_EXT_NET_H__
+#endif  // __NERTC_SDK_EXT_NET_H__

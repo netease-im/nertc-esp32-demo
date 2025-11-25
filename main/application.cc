@@ -5,6 +5,7 @@
 #include "audio_codec.h"
 #include "mqtt_protocol.h"
 #include "websocket_protocol.h"
+#include "mbedtls/base64.h"
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
     #include "nertc_protocol.h"
 #endif
@@ -23,16 +24,14 @@
 #if CONFIG_USE_AFE_WAKE_WORD
 #include "afe_wake_word.h"
 #elif CONFIG_USE_AFE_NERTC_WAKE_WORD
-    #if CONFIG_BOARD_TYPE_LICHUANG_DEV
-        #include "afe_wake_word.h"
-    #else
-        #include "nertc_afe_wake_word.h"
-    #endif
+#include "nertc_afe_wake_word.h"
 #elif CONFIG_USE_ESP_WAKE_WORD
 #include "esp_wake_word.h"
 #else
 #include "no_wake_word.h"
 #endif
+
+#include "esp32_camera.h"
 
 #include <cstring>
 #include <esp_log.h>
@@ -162,6 +161,7 @@ static const char* const STATE_STRINGS[] = {
 };
 
 Application::Application() {
+    ResetOpusParameters();
     event_group_ = xEventGroupCreate();
     background_task_ = new BackgroundTask(4096 * 7);
 
@@ -184,11 +184,7 @@ Application::Application() {
 #if CONFIG_USE_AFE_WAKE_WORD
     wake_word_ = std::make_unique<AfeWakeWord>();
 #elif CONFIG_USE_AFE_NERTC_WAKE_WORD
-#if CONFIG_BOARD_TYPE_LICHUANG_DEV
-    wake_word_ = std::make_unique<AfeWakeWord>();
-#else
     wake_word_ = std::make_unique<NertcAfeWakeWord>();
-#endif
 #elif CONFIG_USE_ESP_WAKE_WORD
     wake_word_ = std::make_unique<EspWakeWord>();
 #else
@@ -412,6 +408,7 @@ void Application::PlaySound(const std::string_view& sound) {
             return audio_decode_queue_.empty();
         });
     }
+    sound_play_adding_ = true;
     background_task_->WaitForCompletion();
 
     /*for (int i = 0; i < 2; ++i)  
@@ -449,6 +446,7 @@ void Application::PlaySound(const std::string_view& sound) {
         std::lock_guard<std::mutex> lock(mutex_);
         audio_decode_queue_.emplace_back(std::move(packet));
     }
+    sound_play_adding_ = false;
 }
 
 void Application::ToggleChatState() {
@@ -530,6 +528,74 @@ void Application::ToggleChatState() {
     }
 }
 
+void Application::TakePhoto() {
+    Schedule([this]() {
+        Camera* camera = Board::GetInstance().GetCamera();
+        if (camera) {
+            camera->Capture();
+            JpegChunk jpeg = {nullptr, 0};
+            if (camera->GetCapturedJpeg(jpeg.data, jpeg.len)) {
+                ESP_LOGI(TAG, "Captured JPEG size: %d", jpeg.len);
+                
+                // 检查输入参数有效性
+                if (!jpeg.data || jpeg.len == 0) {
+                    ESP_LOGE(TAG, "Invalid JPEG data: data=%p, len=%d", jpeg.data, jpeg.len);
+                    if (jpeg.data) {
+                        heap_caps_free(jpeg.data);
+                    }
+                    return;
+                }
+
+                const char* image_format = "data:image/jpeg;base64,";
+                
+                // 计算需要的Base64缓冲区大小 (输入长度 * 4/3 + 填充)
+                size_t olen = ((jpeg.len + 2) / 3) * 4 + strlen(image_format) + 1;  // +1 for null terminator
+                
+                // 分配内存并检查是否成功
+                unsigned char *base64_image = (uint8_t*)heap_caps_aligned_alloc(16, olen, MALLOC_CAP_SPIRAM);
+                if (!base64_image) {
+                    ESP_LOGE(TAG, "Failed to allocate memory for base64 encoding: %u bytes", olen);
+                    if (jpeg.data) {
+                        heap_caps_free(jpeg.data);
+                    }
+                    return;
+                }
+                
+                // 清零缓冲区
+                memset(base64_image, 0, olen);
+
+                // 添加Base64前缀
+                strcpy((char *)base64_image, image_format);
+                
+                // 进行Base64编码
+                size_t encoded_size = 0;
+                int ret = mbedtls_base64_encode(base64_image + strlen(image_format), olen - strlen(image_format), &encoded_size, jpeg.data, jpeg.len);
+                if (ret == 0) {
+                    protocol_->SendMcpImage((const char *)base64_image, strlen(image_format) + encoded_size, 0, "这是什么？", 0);
+                    ESP_LOGI(TAG, "Successfully encoded JPEG to base64, size: %u", olen);
+                } else {
+                    ESP_LOGE(TAG, "mbedtls_base64_encode failed: %d", ret);
+                }
+                
+                // 释放内存
+                heap_caps_free(base64_image);
+                if (jpeg.data) {
+                    heap_caps_free(jpeg.data);
+                }
+            } else {
+                ESP_LOGE(TAG, "Failed to get captured JPEG");
+            }
+        }
+    });
+}
+
+void Application::SendMcpNetworkImage() {
+    Schedule([this]() {
+        std::string img_url = "https://pics5.baidu.com/feed/5ab5c9ea15ce36d3f5f01f21f488f897e850b1b3.jpeg";
+        protocol_->SendMcpImage(img_url.c_str(), img_url.size(), 0, "这是什么？", 1);
+    });
+}
+
 void Application::StartListening() {
     if (device_state_ == kDeviceStateActivating) {
         SetDeviceState(kDeviceStateIdle);
@@ -580,6 +646,37 @@ void Application::StopListening() {
     });
 }
 
+void Application::ResetOpusParameters() {
+#ifdef CONFIG_IDF_TARGET_ESP32C3 
+    opus_frame_duration_ = 20;
+#else
+    opus_frame_duration_ = 60;
+#endif
+#ifdef CONFIG_CONNECTION_TYPE_NERTC
+    auto* config_json = NeRtcProtocol::ReadConfigJson();
+    if(config_json) {
+        cJSON* audio_config = cJSON_GetObjectItem(config_json, "audio_config");
+        if (audio_config) {
+            cJSON* frame_size = cJSON_GetObjectItem(audio_config, "frame_size");
+            if (cJSON_IsNumber(frame_size)) {
+                opus_frame_duration_ = frame_size->valueint;
+            }
+        }
+    }
+#endif
+#if defined(CONFIG_USE_DEVICE_AEC) && !defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS)
+    max_opus_encode_packets_size_ = (960 / opus_frame_duration_);
+#else
+    max_opus_encode_packets_size_ = (600 / opus_frame_duration_);
+#endif
+    max_opus_decode_packets_size_ = (600 / opus_frame_duration_);
+    ESP_LOGI(TAG, "opus_frame_duration_: %d", opus_frame_duration_);
+}
+
+int Application::OpusFrameDurationMs() {
+    return opus_frame_duration_;
+}
+
 void Application::Start() {
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);
@@ -591,7 +688,7 @@ void Application::Start() {
     auto codec = board.GetAudioCodec();
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
 #else
-    opus_decoder_ = std::make_unique<OpusDecoderWrapper>(codec->output_sample_rate(), 1, OPUS_FRAME_DURATION_MS);
+    opus_decoder_ = std::make_unique<OpusDecoderWrapper>(codec->output_sample_rate(), 1, OpusFrameDurationMs());
 #ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
     opus_decoder2_ = std::make_unique<OpusDecoderWrapper>(16000, 1, 20);
 #endif
@@ -599,7 +696,7 @@ void Application::Start() {
 
 #ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
 #else
-    opus_encoder_ = std::make_unique<OpusEncoderWrapper>(16000, 1, OPUS_FRAME_DURATION_MS);
+    opus_encoder_ = std::make_unique<OpusEncoderWrapper>(16000, 1, OpusFrameDurationMs());
     if (aec_mode_ != kAecOff) {
         ESP_LOGI(TAG, "AEC mode: %d, setting opus encoder complexity to 0", aec_mode_);
         opus_encoder_->SetComplexity(0);
@@ -677,7 +774,7 @@ void Application::Start() {
         OnNertcAudioOutput(std::move(packet));
 #else
         std::lock_guard<std::mutex> lock(mutex_);
-        if (device_state_ == kDeviceStateSpeaking && audio_decode_queue_.size() < MAX_DECODE_PACKETS_IN_QUEUE) {
+        if (device_state_ == kDeviceStateSpeaking && audio_decode_queue_.size() < max_opus_decode_packets_size_) {
             audio_decode_queue_.emplace_back(std::move(packet));
         }
 #endif
@@ -822,7 +919,7 @@ void Application::Start() {
 #else
             std::unique_lock<std::mutex> lock(mutex_);
 #endif
-            if (audio_send_queue_.size() >= MAX_ENCODE_PACKETS_IN_QUEUE) {
+            if (audio_send_queue_.size() >= max_opus_encode_packets_size_) {
                 ESP_LOGW(TAG, "Too many audio packets in queue, drop the newest packet");
                 return;
             }
@@ -861,7 +958,7 @@ void Application::Start() {
 #else
                 std::unique_lock<std::mutex> lock(mutex_);
 #endif
-                if (audio_send_queue_.size() >= MAX_ENCODE_PACKETS_IN_QUEUE) {
+                if (audio_send_queue_.size() >= max_opus_encode_packets_size_) {
                     ESP_LOGW(TAG, "Too many audio packets in queue, drop the oldest packet");
                     audio_send_queue_.pop_front();
                 }
@@ -1127,15 +1224,16 @@ void Application::OnAudioOutput() {
     lock.unlock();
     audio_decode_cv_.notify_all();
 
-    // Synchronize the sample rate and frame duration
-    SetDecodeSampleRate(packet.sample_rate, packet.frame_duration);
-
     busy_decoding_audio_ = true;
     background_task_->Schedule([this, codec, packet = std::move(packet)]() mutable {
         busy_decoding_audio_ = false;
         if (aborted_) {
             return;
         }
+
+        // Synchronize the sample rate and frame duration
+        SetDecodeSampleRate(packet.sample_rate, packet.frame_duration);
+        
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
         WriteAudioEncoded(packet.payload);
 #else
@@ -1184,14 +1282,21 @@ void Application::OnNertcAudioOutput(AudioStreamPacket&& packet) {
     if (count > max_drop_count) {
         ESP_LOGW(TAG, "OnNertcAudioOutput task count:%d", count);
         return;
+    } else {
+        if (sound_play_adding_) {
+            ESP_LOGW(TAG, "OnNertcAudioOutput sound_play_adding");
+            return;
+        }
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!audio_decode_queue_.empty()) {
+            ESP_LOGW(TAG, "OnNertcAudioOutput queue size:%d", (int)audio_decode_queue_.size());
+            return;
+        }
     }
 
     auto codec = Board::GetInstance().GetAudioCodec();
 
     audio_decode_cv_.notify_all();
-
-    // Synchronize the sample rate and frame duration
-    SetDecodeSampleRate(packet.sample_rate, packet.frame_duration);
 
     nertc_audio_output_task_count_++;
     background_task_->Schedule([this, codec, packet = std::move(packet)]() mutable {
@@ -1199,6 +1304,9 @@ void Application::OnNertcAudioOutput(AudioStreamPacket&& packet) {
         if (aborted_) {
             return;
         }
+
+        // Synchronize the sample rate and frame duration
+        SetDecodeSampleRate(packet.sample_rate, packet.frame_duration);
 
         std::vector<int16_t> pcm;
 #if defined(CONFIG_CONNECTION_TYPE_NERTC) && defined(CONFIG_USE_NERTC_SERVER_AEC)
@@ -1300,7 +1408,7 @@ void Application::OnAudioInput() {
             packet.payload = std::move(opus);
 
             std::lock_guard<std::mutex> lock(mutex_);
-            if (audio_send_queue_.size() >= MAX_ENCODE_PACKETS_IN_QUEUE)
+            if (audio_send_queue_.size() >= max_opus_encode_packets_size_)
             {
                 ESP_LOGW(TAG, "Too many audio packets in queue, drop the oldest packet");
                 audio_send_queue_.pop_front();
@@ -1327,7 +1435,7 @@ void Application::OnAudioInput() {
 #endif
     }
 
-    vTaskDelay(pdMS_TO_TICKS(OPUS_FRAME_DURATION_MS / 2));
+    vTaskDelay(pdMS_TO_TICKS(OpusFrameDurationMs() / 2));
 }
 
 bool Application::ReadAudio(std::vector<int16_t>& data, int sample_rate, int samples) {
@@ -1523,7 +1631,7 @@ void Application::SetDeviceState(DeviceState state) {
 }
 
 void Application::ResetDecoder() {
-    ESP_LOGI(TAG, "Reset audio decoder");
+    ESP_LOGW(TAG, "Reset audio decoder");
     std::lock_guard<std::mutex> lock(mutex_);
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
 #else
@@ -1546,6 +1654,7 @@ void Application::SetDecodeSampleRate(int sample_rate, int frame_duration) {
     if (opus_decoder_->sample_rate() == sample_rate && opus_decoder_->duration_ms() == frame_duration) {
         return;
     }
+    ESP_LOGW(TAG, "SetDecodeSampleRate: %d, %d", sample_rate, frame_duration);
 
     opus_decoder_.reset();
     opus_decoder_ = std::make_unique<OpusDecoderWrapper>(sample_rate, 1, frame_duration);
@@ -1802,7 +1911,7 @@ void Application::Shake(float mag, float delta, bool is_strong) {
                         {
                             AudioStreamPacket packet;
                             packet.sample_rate = 16000;
-                            packet.frame_duration = OPUS_FRAME_DURATION_MS;
+                            packet.frame_duration = OpusFrameDurationMs();
                             audio_decode_queue_.emplace_back(std::move(packet));
                         }
                     }
@@ -1848,7 +1957,9 @@ void Application::TouchRestore() {
 }
 
 void Application::StartRing() {
+    ESP_LOGI(TAG,"StartRing");
     if (ring_timer_) {
+        ringing_ = true;
         // ResetDecoder();
         // PlaySound(Lang::Sounds::P3_RING);
         xTimerStop(ring_timer_, 0);
@@ -1858,12 +1969,14 @@ void Application::StartRing() {
 }
 void Application::RingTimerCb(TimerHandle_t xTimer) {
     auto* self = static_cast<Application*>(pvTimerGetTimerID(xTimer));
-    if (self) {
+    if (self && self->ringing_) {
         self->ResetDecoder();
         self->PlaySound(Lang::Sounds::P3_RING);
     }
 }
 void Application::StopRing() {
+    ESP_LOGI(TAG,"StopRing");
+    ringing_ = false;
     xTimerStop(ring_timer_, 0);
     ResetDecoder();
     
@@ -1872,7 +1985,7 @@ void Application::StopRing() {
     {
         AudioStreamPacket packet;
         packet.sample_rate = 16000;
-        packet.frame_duration = OPUS_FRAME_DURATION_MS;
+        packet.frame_duration = OpusFrameDurationMs();
         audio_decode_queue_.emplace_back(std::move(packet));
     }
 }

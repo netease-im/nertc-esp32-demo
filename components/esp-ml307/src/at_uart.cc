@@ -53,6 +53,7 @@ void AtUart::Initialize() {
     ESP_ERROR_CHECK(uart_param_config(uart_num_, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(uart_num_, tx_pin_, rx_pin_, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     
+#ifdef CONFIG_BOARD_TYPE_ZHENGCHEN_EYE
     // Configure a UART interrupt threshold and timeout
     uart_intr_config_t uart_intr = {
         /* 位或寄存器掩码，而不是中断枚举值 */
@@ -66,7 +67,7 @@ void AtUart::Initialize() {
 
     // Enable UART RX FIFO full threshold and timeout interrupts
     ESP_ERROR_CHECK(uart_enable_rx_intr(uart_num_));
-
+#endif
     if (dtr_pin_ != GPIO_NUM_NC) {
         gpio_config_t config = {};
         config.pin_bit_mask = (1ULL << dtr_pin_);

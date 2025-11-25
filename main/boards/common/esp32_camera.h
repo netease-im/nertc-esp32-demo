@@ -34,6 +34,7 @@ public:
     virtual bool SetHMirror(bool enabled) override;
     virtual bool SetVFlip(bool enabled) override;
     virtual std::string Explain(const std::string& question);
+    virtual bool GetCapturedJpeg(uint8_t*& data, size_t& len) override;
 };
 
 #endif // ESP32_CAMERA_H
