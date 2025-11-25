@@ -1,10 +1,11 @@
 #ifndef __NERTC_SDK_H__
 #define __NERTC_SDK_H__
 
-#include "nertc_sdk_event.h"
-#include "nertc_sdk_error.h"
-
 #include <stdint.h>
+
+#include "nertc_sdk_deprecated.h"
+#include "nertc_sdk_error.h"
+#include "nertc_sdk_event.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,10 +21,10 @@ NERTC_SDK_API const char* nertc_get_version(void);
 
 /**
  * @brief 创建引擎实例,该方法是整个SDK调用的第一个方法
- * @param cfg 引擎配置
+ * @param cfg SDK全局配置，详见: {@link nertc_sdk_configuration_t}
  * @return 引擎实例
  */
-NERTC_SDK_API nertc_sdk_engine_t nertc_create_engine(const nertc_sdk_config_t *cfg);
+NERTC_SDK_API nertc_sdk_engine_t nertc_create_engine_with_config(const nertc_sdk_configuration_t* cfg);
 
 /**
  * @brief 销毁引擎实例
@@ -35,11 +36,12 @@ NERTC_SDK_API void nertc_destroy_engine(nertc_sdk_engine_t engine);
  * @brief 初始化引擎实例
  * @note  创建引擎实例之后调用的第一个方法，仅能被初始化一次
  * @param engine 通过 nertc_create_engine 创建且未被初始化的引擎实例
+ * @param cfg 引擎实例配置，详见: {@link nertc_sdk_engine_config_t}
  * @return 方法调用结果：<br>
  *         -   0：成功 <br>
  *         - 非0：失败 <br>
  */
-NERTC_SDK_API int nertc_init(nertc_sdk_engine_t engine);
+NERTC_SDK_API int nertc_init_engine(nertc_sdk_engine_t engine, nertc_sdk_engine_config_t* cfg);
 
 /**
  * @brief 加入房间
@@ -51,10 +53,7 @@ NERTC_SDK_API int nertc_init(nertc_sdk_engine_t engine);
  *         -   0：成功 <br>
  *         - 非0：失败 <br>
  */
-NERTC_SDK_API int nertc_join(nertc_sdk_engine_t engine,
-                             const char* channel_name, 
-                             const char * token,
-                             uint64_t uid);
+NERTC_SDK_API int nertc_join(nertc_sdk_engine_t engine, const char* channel_name, const char* token, uint64_t uid);
 
 /**
  * @brief 离开房间
@@ -77,8 +76,8 @@ NERTC_SDK_API int nertc_leave(nertc_sdk_engine_t engine);
  *         -   0：成功 <br>
  *         - 非0：失败 <br>
  */
-NERTC_SDK_API int nertc_push_audio_frame(nertc_sdk_engine_t engine, 
-                                         nertc_sdk_media_stream_e stream_type, 
+NERTC_SDK_API int nertc_push_audio_frame(nertc_sdk_engine_t engine,
+                                         nertc_sdk_media_stream_e stream_type,
                                          nertc_sdk_audio_frame_t* audio_frame);
 /**
  * @brief 推送外部音频编码帧。
@@ -95,8 +94,8 @@ NERTC_SDK_API int nertc_push_audio_frame(nertc_sdk_engine_t engine,
  *         -   0：成功 <br>
  *         - 非0：失败 <br>
  */
-NERTC_SDK_API int nertc_push_audio_encoded_frame(nertc_sdk_engine_t engine, 
-                                                 nertc_sdk_media_stream_e stream_type, 
+NERTC_SDK_API int nertc_push_audio_encoded_frame(nertc_sdk_engine_t engine,
+                                                 nertc_sdk_media_stream_e stream_type,
                                                  nertc_sdk_audio_config_t audio_config,
                                                  uint8_t audio_rms_level,
                                                  nertc_sdk_audio_encoded_frame_t* audio_encoded_frame);
@@ -111,10 +110,10 @@ NERTC_SDK_API int nertc_push_audio_encoded_frame(nertc_sdk_engine_t engine,
  * @return 方法调用结果：<br>
  *         -   0：成功 <br>
  *         - 非0：失败 <br>
- */                                                
-NERTC_SDK_API int nertc_push_audio_reference_frame(nertc_sdk_engine_t engine, 
-                                                   nertc_sdk_media_stream_e stream_type, 
-                                                   nertc_sdk_audio_encoded_frame_t* audio_encoded_frame, 
+ */
+NERTC_SDK_API int nertc_push_audio_reference_frame(nertc_sdk_engine_t engine,
+                                                   nertc_sdk_media_stream_e stream_type,
+                                                   nertc_sdk_audio_encoded_frame_t* audio_encoded_frame,
                                                    nertc_sdk_audio_frame_t* audio_frame);
 /**
  * @brief 开启字幕
@@ -123,7 +122,7 @@ NERTC_SDK_API int nertc_push_audio_reference_frame(nertc_sdk_engine_t engine,
  * @return 方法调用结果：<br>
  *         -   0：成功 <br>
  *         - 非0：失败 <br>
- */                                                
+ */
 NERTC_SDK_API int nertc_start_asr_caption(nertc_sdk_engine_t engine, nertc_sdk_asr_caption_config_t* config);
 
 /**
@@ -191,7 +190,7 @@ NERTC_SDK_API int nertc_ai_manual_stop_listen(nertc_sdk_engine_t engine);
 NERTC_SDK_API int nertc_ai_hang_up(nertc_sdk_engine_t engine);
 
 /**
- * @brief AI大模型请求
+ * @brief AI 文本请求
  * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
  * @param text 文本
  * @param interrupt_mode 打断模式：<br>
@@ -203,6 +202,16 @@ NERTC_SDK_API int nertc_ai_hang_up(nertc_sdk_engine_t engine);
  *         - 非0：失败 <br>
  * */
 NERTC_SDK_API int nertc_ai_llm_prompt(nertc_sdk_engine_t engine, const char* text, int interrupt_mode);
+
+/**
+ * @brief AI 图片识别请求
+ * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
+ * @param request AI大模型请求
+ * @return 方法调用结果：<br>
+ *         -   0：成功 <br>
+ *         - 非0：失败 <br>
+ * */
+NERTC_SDK_API int nertc_ai_llm_image(nertc_sdk_engine_t engine, nertc_sdk_ai_llm_request_t* request);
 
 /**
  * @brief 外部文本转语音
@@ -218,6 +227,37 @@ NERTC_SDK_API int nertc_ai_llm_prompt(nertc_sdk_engine_t engine, const char* tex
  *         - 非0：失败 <br>
  * */
 NERTC_SDK_API int nertc_ai_external_tts(nertc_sdk_engine_t engine, const char* text, int interrupt_mode, bool add_context);
+
+/**
+ * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ *                                                  结构体默认初始化函数
+ * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ */
+NERTC_SDK_API void nertc_sdk_configuration_init(nertc_sdk_configuration_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_engine_config_init(nertc_sdk_engine_config_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_licence_config_init(nertc_sdk_licence_config_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_audio_config_init(nertc_sdk_audio_config_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_log_config_init(nertc_sdk_log_config_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_optional_configuration_init(nertc_sdk_optional_configuration_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_user_info_init(nertc_sdk_user_info_t* info);
+
+NERTC_SDK_API void nertc_sdk_recommended_configuration_init(nertc_sdk_recommended_config_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_audio_frame_init(nertc_sdk_audio_frame_t* frame);
+
+NERTC_SDK_API void nertc_sdk_audio_encoded_frame_init(nertc_sdk_audio_encoded_frame_t* frame);
+
+NERTC_SDK_API void nertc_sdk_asr_caption_config_init(nertc_sdk_asr_caption_config_t* cfg);
+
+NERTC_SDK_API void nertc_sdk_asr_caption_result_init(nertc_sdk_asr_caption_result_t* result);
+
+NERTC_SDK_API void nertc_sdk_ai_data_result_init(nertc_sdk_ai_data_result_t* result);
 
 #ifdef __cplusplus
 }

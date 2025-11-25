@@ -9,6 +9,7 @@
 #include "config.h"
 #include "power_save_timer.h"
 #include "font_awesome_symbols.h"
+#include "iot/thing_manager.h"
 
 #include <wifi_station.h>
 #include <esp_log.h>
@@ -149,7 +150,8 @@ private:
         press_to_talk_enabled_ = settings.GetInt("press_to_talk", 0) != 0;
 
 #if CONFIG_IOT_PROTOCOL_XIAOZHI
-#error "XiaoZhi 协议不支持"
+        auto& thing_manager = iot::ThingManager::GetInstance();
+        thing_manager.AddThing(iot::CreateThing("Speaker"));
 #elif CONFIG_IOT_PROTOCOL_MCP
         auto& mcp_server = McpServer::GetInstance();
         mcp_server.AddTool("self.set_press_to_talk",
