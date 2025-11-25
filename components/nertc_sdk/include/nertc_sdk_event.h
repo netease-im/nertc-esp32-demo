@@ -1,10 +1,10 @@
 #ifndef __NERTC_SDK_EVENT_H__
 #define __NERTC_SDK_EVENT_H__
 
+#include <stdint.h>
+
 #include "nertc_sdk_define.h"
 #include "nertc_sdk_error.h"
-
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,9 +29,7 @@ typedef struct nertc_sdk_event_handler {
    * @param msg 错误描述
    * @endif
    */
-  void (*on_error)(const nertc_sdk_callback_context_t* ctx,
-                   nertc_sdk_error_code_e code,
-                   const char* msg);
+  void (*on_error)(const nertc_sdk_callback_context_t* ctx, nertc_sdk_error_code_e code, const char* msg);
 
   /**
    * license 过期提醒。在剩余天数低于 30 天时会收到此回调。
@@ -39,8 +37,7 @@ typedef struct nertc_sdk_event_handler {
    * @param remaining_days 剩余天数
    * @endif
    */
-  void (*on_license_expire_warning)(const nertc_sdk_callback_context_t* ctx,
-                                    int remaining_days);
+  void (*on_license_expire_warning)(const nertc_sdk_callback_context_t* ctx, int remaining_days);
 
   /**
    * 房间状态已改变回调。
@@ -50,9 +47,7 @@ typedef struct nertc_sdk_event_handler {
    * @param reason 引起当前连接状态发生改变的原因
    * @endif
    */
-  void (*on_channel_status_changed)(const nertc_sdk_callback_context_t* ctx,
-                                    nertc_sdk_channel_state_e status,
-                                    const char* msg);
+  void (*on_channel_status_changed)(const nertc_sdk_callback_context_t* ctx, nertc_sdk_channel_state_e status, const char* msg);
 
   /**
    * @brief 加入房间成功回调。
@@ -75,9 +70,7 @@ typedef struct nertc_sdk_event_handler {
    * @param ctx 回调上下文
    * @param reason 断开原因
    */
-  void (*on_disconnect)(const nertc_sdk_callback_context_t* ctx,
-                        nertc_sdk_error_code_e code,
-                        int reason);
+  void (*on_disconnect)(const nertc_sdk_callback_context_t* ctx, nertc_sdk_error_code_e code, int reason);
 
   /**
    * @brief 远端用户加入房间回调 <br>
@@ -85,8 +78,7 @@ typedef struct nertc_sdk_event_handler {
    * @param uid 远端用户id
    * @param user_name 远端用户名(保留字段)
    */
-  void (*on_user_joined)(const nertc_sdk_callback_context_t* ctx,
-                         const nertc_sdk_user_info_t* user);
+  void (*on_user_joined)(const nertc_sdk_callback_context_t* ctx, const nertc_sdk_user_info_t* user);
 
   /**
    * @brief 远端用户离开房间<br>
@@ -94,9 +86,7 @@ typedef struct nertc_sdk_event_handler {
    * @param uid 远端用户id
    * @param reason 用户离开房间的原因
    */
-  void (*on_user_left)(const nertc_sdk_callback_context_t* ctx,
-                       const nertc_sdk_user_info_t* user,
-                       int reason);
+  void (*on_user_left)(const nertc_sdk_callback_context_t* ctx, const nertc_sdk_user_info_t* user, int reason);
 
   /**
    * @if Chinese
@@ -106,9 +96,7 @@ typedef struct nertc_sdk_event_handler {
    * @param stream_type 远端用户流类型
    * @endif
    */
-  void (*on_user_audio_start)(const nertc_sdk_callback_context_t* ctx,
-                              uint64_t uid,
-                              nertc_sdk_media_stream_e stream_type);
+  void (*on_user_audio_start)(const nertc_sdk_callback_context_t* ctx, uint64_t uid, nertc_sdk_media_stream_e stream_type);
 
   /**
    * @brief 房间内用户静音
@@ -129,9 +117,7 @@ typedef struct nertc_sdk_event_handler {
    * @param stream_type 远端用户流类型
    * @endif
    */
-  void (*on_user_audio_stop)(const nertc_sdk_callback_context_t* ctx,
-                             uint64_t uid,
-                             nertc_sdk_media_stream_e stream_type);
+  void (*on_user_audio_stop)(const nertc_sdk_callback_context_t* ctx, uint64_t uid, nertc_sdk_media_stream_e stream_type);
 
   /**
    * 实时字幕状态回调。
@@ -163,8 +149,7 @@ typedef struct nertc_sdk_event_handler {
    * @param data 信令数据
    * @endif
    */
-  void (*on_ai_data)(const nertc_sdk_callback_context_t* ctx,
-                     nertc_sdk_ai_data_result_t* ai_data);
+  void (*on_ai_data)(const nertc_sdk_callback_context_t* ctx, nertc_sdk_ai_data_result_t* ai_data);
 
   /**
    * 远端单个用户的音频解码前数据回调。
@@ -180,19 +165,12 @@ typedef struct nertc_sdk_event_handler {
 
 } nertc_sdk_event_handle_t;
 
-typedef struct nertc_sdk_config {
-  const char* app_key;                         /**< 应用的AppKey */
-  const char* device_id;                       /**< 设备ID */
-  bool force_unsafe_mode;                      /**< 是否强制使用非安全模式,
-                                                true： 在调用 nertc_join 接口时允许传递空的token，但有可能会出现串房间的问题；
-                                                false：在调用 nertc_join 接口时不允许传递空的token，否则会加入房间失败（除非后台针对app key 开启了非安全模式） */
-  nertc_sdk_event_handle_t event_handler;      /**< 事件回调 */
-  nertc_sdk_user_data_t user_data;             /**< 用户数据 */
-  nertc_sdk_optional_config_t optional_config; /**< 可选功能配置 */
-  nertc_sdk_licence_config_t licence_cfg;      /**< licence 配置 */
-  nertc_sdk_audio_config_t audio_config; /**< 走设备本地 AEC 时的音频配置 */
-  nertc_sdk_log_config_t log_cfg;        /**< 日志配置 */
-} nertc_sdk_config_t;
+typedef struct nertc_sdk_engine_config {
+  nertc_sdk_engine_mode_e engine_mode;        /**< 引擎模式 */
+  nertc_sdk_event_handle_t event_handler;     /**< 事件回调 */
+  nertc_sdk_user_data_t user_data;            /**< 用户数据 */
+  nertc_sdk_ext_net_handle_t* ext_net_handle; /**< 用户自定义的网络接口 */
+} nertc_sdk_engine_config_t;
 
 #ifdef __cplusplus
 }

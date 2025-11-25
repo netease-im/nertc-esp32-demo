@@ -2,6 +2,7 @@
 #define __NERTC_SDK_DEFINE_H__
 
 #include <stdint.h>
+
 #include "nertc_sdk_ext_net.h"
 
 #ifdef __cplusplus
@@ -10,6 +11,7 @@ extern "C" {
 
 /** token 最大长度 */
 #define kNERtcMaxTokenLength 256
+#define kNERtcImageLlmMaxFragmentLen 256
 
 typedef enum {
   NERTC_SDK_DEVICE_LEVEL_NORMAL = 0,
@@ -23,6 +25,11 @@ typedef enum {
   NERTC_SDK_LOG_WARNING = 2,
   NERTC_SDK_LOG_INFO = 3
 } nertc_sdk_log_level_e;
+
+typedef enum {
+  NERTC_SDK_ENGINE_MODE_AI = 0,
+  NERTC_SDK_ENGINE_MODE_PTT = 1,
+} nertc_sdk_engine_mode_e;
 
 typedef enum {
   NERTC_SDK_CHANNEL_STATE_IDLE = 0,
@@ -53,7 +60,7 @@ typedef enum {
   NERTC_SDK_AUDIO_PCM_16 = 0,
 } nertc_sdk_audio_pcm_type_e;
 
-typedef enum  {
+typedef enum {
   NERTC_SDK_AUDIO_CODEC_TYPE_PCM = 0,
   NERTC_SDK_AUDIO_CODEC_TYPE_OPUS = 1,
   NERTC_SDK_AUDIO_CODEC_TYPE_G711 = 2,
@@ -72,21 +79,53 @@ typedef enum {
   NERTC_SDK_ASR_CAPTION_STATE_STOPPED = 3
 } nertc_sdk_asr_caption_state_e;
 
-typedef struct nertc_sdk_optional_config {
-  nertc_sdk_device_level_e device_performance_level;
-  bool enable_server_aec;
-  bool enable_ptt_mode;
-  nertc_sdk_ext_net_handle_t* ext_net_handle; // 用户自定义的网络接口
-  const char* custom_config;
-} nertc_sdk_optional_config_t;
+typedef enum {
+  NERTC_SDK_LLM_IMAGE_TYPE_PIC = 0,
+  NERTC_SDK_LLM_IMAGE_TYPE_NETWORK_URL = 1,
+} nertc_sdk_llm_image_type_e;
 
 typedef struct nertc_sdk_licence_config {
   const char* license;  // licence
 } nertc_sdk_licence_config_t;
 
+typedef struct nertc_sdk_audio_config {
+  /** 音频采样率 */
+  int sample_rate;
+  /** 音频帧时长，单位为毫秒 */
+  int frame_duration;
+  /** 音频声道数 */
+  int channels;
+  /** 每个声道的采样点数 */
+  int samples_per_channel;
+  /** 接收音频采样率 */
+  int out_sample_rate;
+  /** 音频编码类型 */
+  nertc_sdk_audio_codec_type_e codec_type;
+} nertc_sdk_audio_config_t;
+
 typedef struct nertc_sdk_log_config {
   nertc_sdk_log_level_e log_level;
 } nertc_sdk_log_config_t;
+
+typedef struct nertc_sdk_optional_configuration {
+  nertc_sdk_device_level_e device_performance_level;
+  bool enable_server_aec;
+  bool prefer_use_psram; /**< 是否优先使用PSRAM */
+  const char* custom_config;
+} nertc_sdk_optional_configuration_t;
+
+typedef struct nertc_sdk_configuration {
+  const char* app_key;    /**< 应用的AppKey */
+  const char* device_id;  /**< 设备ID */
+  bool force_unsafe_mode; /**< 是否强制使用非安全模式. true: 在调用 nertc_join
+                             接口时允许传递空的token，但有可能会出现串房间的问题; false: 在调用 nertc_join
+                             接口时不允许传递空的token，否则会加入房间失败（除非后台针对app key 开启了非安全模式） */
+
+  nertc_sdk_licence_config_t licence_cfg;             /**< licence 配置 */
+  nertc_sdk_audio_config_t audio_config;              /**< 走设备本地 AEC 时的音频配置 */
+  nertc_sdk_optional_configuration_t optional_config; /**< 可选功能配置 */
+  nertc_sdk_log_config_t log_cfg;                     /**< 日志配置 */
+} nertc_sdk_configuration_t;
 
 typedef struct nertc_sdk_user_info {
   /**
@@ -110,22 +149,6 @@ typedef struct nertc_sdk_user_info {
 } nertc_sdk_user_info_t;
 
 typedef uint8_t nertc_sdk_audio_data_t;
-
-typedef struct nertc_sdk_audio_config {
-  /** 音频采样率 */
-  int sample_rate;
-  /** 音频帧时长，单位为毫秒 */
-  int frame_duration;
-  /** 音频声道数 */
-  int channels;
-  /** 每个声道的采样点数 */
-  int samples_per_channel;
-  /** 接收音频采样率 */
-  int out_sample_rate;
-  /** 音频编码类型 */
-  nertc_sdk_audio_codec_type_e codec_type;
-
-} nertc_sdk_audio_config_t;
 
 typedef struct nertc_sdk_recommended_config {
   /** 走服务端 AEC 时需要参考的音频采集配置 */
@@ -194,6 +217,21 @@ typedef struct nertc_sdk_ai_data_result {
   /** AI数据长度 */
   int data_len;
 } nertc_sdk_ai_data_result_t;
+
+typedef struct nertc_sdk_ai_llm_request {
+  /** 文本 */
+  const char* text;
+  /** 图片base64字符串 或 网络图片url */
+  const char* img_url;
+  /** 图片base64字符串长度 或者 网络图片url长度 */
+  int img_len;
+  /** 图片压缩方式, 0: 不压缩, 1: gzip*/
+  int img_compress_type;
+  /** 打断模式 1:直接打断, 2:等待当前交互结束后, 3:直接丢弃*/
+  int interrupt_mode;
+  /** 图片类型 */
+  nertc_sdk_llm_image_type_e img_type;
+} nertc_sdk_ai_llm_request_t;
 
 #ifdef __cplusplus
 }

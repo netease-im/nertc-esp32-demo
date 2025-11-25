@@ -25,18 +25,20 @@ endchoice
 
 choice BOARD_TYPE
     prompt "Board Type"
-    default BOARD_TYPE_BREAD_COMPACT_WIFI
+    default BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
     help
         Board type. 开发板类型
     config BOARD_TYPE_BREAD_COMPACT_WIFI
         bool "面包板新版接线（WiFi）"
         depends on IDF_TARGET_ESP32S3
+        select USE_NERTC_SERVER_AEC
     config BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
         bool "面包板新版接线（WiFi）+ LCD"
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_BREAD_COMPACT_ML307
         bool "面包板新版接线（ML307 AT）"
         depends on IDF_TARGET_ESP32S3
+        select USE_NERTC_SERVER_AEC
     config BOARD_TYPE_BREAD_COMPACT_ESP32
         bool "面包板（WiFi） ESP32 DevKit"
         depends on IDF_TARGET_ESP32
@@ -46,12 +48,14 @@ choice BOARD_TYPE
     config BOARD_TYPE_XMINI_C3
         bool "虾哥 Mini C3"
         depends on IDF_TARGET_ESP32C3
+        select USE_NERTC_SERVER_AEC
     config BOARD_TYPE_ESP32S3_KORVO2_V3
         bool "ESP32S3_KORVO2_V3开发板"
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_ESP_SPARKBOT
         bool "ESP-SparkBot开发板"
         depends on IDF_TARGET_ESP32S3
+        select USE_NERTC_SERVER_AEC
     config BOARD_TYPE_ESP_SPOT_S3
         bool "ESP-Spot-S3"
         depends on IDF_TARGET_ESP32S3
@@ -94,6 +98,8 @@ choice BOARD_TYPE
     config BOARD_TYPE_LICHUANG_DEV
         bool "立创·实战派ESP32-S3开发板"
         depends on IDF_TARGET_ESP32S3
+        select USE_AUDIO_PROCESSOR
+        select USE_DEVICE_AEC
     config BOARD_TYPE_LICHUANG_C3_DEV
         bool "立创·实战派ESP32-C3开发板"
         depends on IDF_TARGET_ESP32C3
@@ -222,6 +228,7 @@ choice BOARD_TYPE
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_XINGZHI_Cube_1_54TFT_ML307
         bool "无名科技星智1.54(ML307)"
+        select USE_NERTC_SERVER_AEC
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_SENSECAP_WATCHER
         bool "SenseCAP Watcher"
@@ -247,6 +254,9 @@ choice BOARD_TYPE
     config BOARD_TYPE_ZHENGCHEN_EYE
         bool "征辰科技AI-EYE"
         depends on IDF_TARGET_ESP32S3
+        select ENABLE_ANIM_EMOJI
+        select USE_AUDIO_PROCESSOR
+        select USE_DEVICE_AEC
     config BOARD_TYPE_MINSI_K08_DUAL
         bool "敏思科技K08(DUAL)"
         depends on IDF_TARGET_ESP32S3
@@ -268,8 +278,11 @@ choice BOARD_TYPE
         select LV_GIF_CACHE_DECODE_DATA
     config BOARD_TYPE_DOIT_AI_SPEAKER
         bool "Doit-AI-SPEAKER"
+        select USE_NERTC_SERVER_AEC
     config BOARD_TYPE_DOIT_ESP32S3_EYE_6824
         bool "doit-esp32s3-eye-6824"
+        select ENABLE_ANIM_EMOJI
+        select USE_DEVICE_AEC
 endchoice
 
 choice ESP_S3_LCD_EV_Board_Version_TYPE
@@ -301,7 +314,8 @@ endchoice
 choice DISPLAY_LCD_TYPE
     depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_ESP32_LCD || BOARD_TYPE_ESP32_CGC || BOARD_TYPE_ESP32P4_NANO || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_XC || BOARD_TYPE_DOIT_ESP32S3_EYE_6824 || BOARD_TYPE_DOIT_ESP32S3_EYE_6824_DIFF || BOARD_TYPE_DOIT_ESP32S3_EYE_8311
     prompt "LCD Type"
-    default LCD_ST7789_240X320
+    # default LCD_ST7789_240X320
+    default LCD_GC9A01_240X240
     help
         屏幕类型选择
     config LCD_ST7789_240X320
@@ -449,8 +463,8 @@ config USE_NERTC_PTT_MODE
 
 config USE_NERTC_SERVER_AEC
     bool "Enable NERTC Server-Side AEC"
-    default y
-    depends on !USE_NERTC_PTT_MODE
+    default n
+    depends on !USE_NERTC_PTT_MODE && !BOARD_TYPE_DOIT_ESP32S3_EYE_6824
     help
         启用nertc服务器端 AEC
 
@@ -492,14 +506,14 @@ config USE_AFE_NERTC_WAKE_WORD
 config USE_AUDIO_PROCESSOR
     bool "Enable Audio Noise Reduction"
     default n
-    depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4) && SPIRAM
+    depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4) && SPIRAM && !BOARD_TYPE_DOIT_ESP32S3_EYE_6824
     help
         需要 ESP32 S3 与 PSRAM 支持
 
 config USE_DEVICE_AEC
     bool "Enable Device-Side AEC"
     default n
-    depends on (BOARD_TYPE_DOIT_AI_01_KIT || BOARD_TYPE_DOIT_AI_01_KIT_LCD || BOARD_TYPE_DOIT_ESP32S3_EYE_6824 || BOARD_TYPE_DOIT_ESP32S3_EYE_6824_DIFF) || (USE_AUDIO_PROCESSOR && (BOARD_TYPE_ZHENGCHEN_EYE || BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3 || BOARD_TYPE_ESP32S3_Touch_AMOLED_1_75 || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_4B || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_XC))
+    depends on !USE_NERTC_PTT_MODE && ((BOARD_TYPE_DOIT_AI_01_KIT || BOARD_TYPE_DOIT_AI_01_KIT_LCD || BOARD_TYPE_DOIT_ESP32S3_EYE_6824 || BOARD_TYPE_DOIT_ESP32S3_EYE_6824_DIFF) || (USE_AUDIO_PROCESSOR && (BOARD_TYPE_ZHENGCHEN_EYE || BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3 || BOARD_TYPE_ESP32S3_Touch_AMOLED_1_75 || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_4B || BOARD_TYPE_ESP32P4_WIFI6_Touch_LCD_XC)))
     help
         因为性能不够，不建议和微信聊天界面风格同时开启
 
@@ -525,7 +539,7 @@ config AUDIO_DEBUG_UDP_SERVER
 
 choice IOT_PROTOCOL
     prompt "IoT Protocol"
-    default IOT_PROTOCOL_MCP
+    default IOT_PROTOCOL_XIAOZHI
     help
         IoT 协议，用于获取设备状态与发送控制指令
     config IOT_PROTOCOL_MCP

@@ -12,6 +12,13 @@
 
 #define NERTC_ENABLE_CONFIG_FILE 1
 
+enum NERtcP2PCallState {
+    kNERtcP2PCallStateIdle = 0,
+    kNERtcP2PCallStatePreConnecting,
+    kNERtcP2PCallStateConnecting,
+    kNERtcP2PCallStateConnected,
+};
+
 class NeRtcProtocol : public Protocol {
 public:
     NeRtcProtocol();
@@ -24,6 +31,7 @@ public:
     bool SendAudio(const AudioStreamPacket& packet) override;
     void SendAecReferenceAudio(const AudioStreamPacket& packet) override;
     void SendMcpMessage(const std::string& message) override;
+    void SendMcpImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) override;
 private:
     void RequestChecksum(std::string& checksum);
     void ParseFunctionCall(cJSON* data, std::string& arguments, std::string& name);
@@ -73,9 +81,15 @@ public:
     static std::string config_file_path_;
     static cJSON* ReadConfigJson();
 #endif
+    void SetP2PCallState(NERtcP2PCallState state);
+    NERtcP2PCallState GetP2PCallState();
 private:
     std::string local_config_appkey_;
     bool asr_enabled_ = true;
+    bool rtc_mode_ = false; // donot start ai
+    NERtcP2PCallState rtc_p2p_state_ = kNERtcP2PCallStateIdle;
+    std::chrono::steady_clock::time_point rtc_p2p_start_time_;
+    
 };
 
 #endif

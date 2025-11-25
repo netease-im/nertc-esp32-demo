@@ -302,3 +302,87 @@ std::string Esp32Camera::Explain(const std::string& question) {
         fb_->width, fb_->height, total_sent, remain_stack_size, question.c_str(), result.c_str());
     return result;
 }
+
+bool Esp32Camera::GetCapturedJpeg(uint8_t*& data, size_t& len) {
+    // 检查 frame buffer 是否有效
+    if (!fb_) {
+        ESP_LOGE(TAG, "No frame buffer available");
+        return false;
+    }
+
+    // 创建局部的 JPEG 队列, 40 entries is about to store 512 * 40 = 20480 bytes of JPEG data
+    QueueHandle_t jpeg_queue = xQueueCreate(40, sizeof(JpegChunk));
+    if (jpeg_queue == nullptr) {
+        ESP_LOGE(TAG, "Failed to create JPEG queue");
+        return false;
+    }
+
+    // We spawn a thread to encode the image to JPEG
+    encoder_thread_ = std::thread([this, jpeg_queue]() {
+        frame2jpg_cb(fb_, 63, [](void* arg, size_t index, const void* data, size_t len) -> unsigned int {
+            auto jpeg_queue = (QueueHandle_t)arg;
+            JpegChunk chunk = {
+                .data = (uint8_t*)heap_caps_aligned_alloc(16, len, MALLOC_CAP_SPIRAM),
+                .len = len
+            };
+            memcpy(chunk.data, data, len);
+            xQueueSend(jpeg_queue, &chunk, portMAX_DELAY);
+            return len;
+        }, jpeg_queue);
+    });
+    
+    encoder_thread_.join();
+    
+    // 收集所有的JPEG数据块
+    std::vector<JpegChunk> chunks;
+    size_t total_size = 0;
+    JpegChunk chunk;
+    
+    while (xQueueReceive(jpeg_queue, &chunk, portMAX_DELAY) == pdPASS) {
+        if (chunk.data == nullptr) {
+            // 结束标记
+            break;
+        }
+        chunks.push_back(chunk);
+        total_size += chunk.len;
+    }
+    
+    vQueueDelete(jpeg_queue);
+    
+    if (chunks.empty() || total_size == 0) {
+        ESP_LOGE(TAG, "No JPEG data received or encoding failed");
+        return false;
+    }
+
+    if (data != nullptr) {
+        heap_caps_free(data);
+        data = nullptr;
+    }
+
+    len = 0;
+    
+    // 分配连续的内存空间存储完整的JPEG数据
+    data = (uint8_t*)heap_caps_aligned_alloc(16, total_size, MALLOC_CAP_SPIRAM);
+    if (!data) {
+        ESP_LOGE(TAG, "Failed to allocate memory for complete JPEG: %u bytes", total_size);
+        // 清理已分配的chunk内存
+        for (auto& c : chunks) {
+            if (c.data) {
+                heap_caps_free(c.data);
+            }
+        }
+        return false;
+    }
+    
+    // 将所有chunk拷贝到连续内存中
+    size_t offset = 0;
+    for (auto& c : chunks) {
+        memcpy(data + offset, c.data, c.len);
+        offset += c.len;
+        heap_caps_free(c.data); // 释放chunk内存
+    }
+    
+    len = total_size;
+    ESP_LOGI(TAG, "JPEG encoding completed, total size: %u bytes, data: %p", len, data);
+    return true;
+}

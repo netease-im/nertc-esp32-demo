@@ -25,6 +25,13 @@
 
 #define NERTC_DEFAULT_TEST_LICENSE "eyJhbGdvcml0aG0iOiJkZWZhdWx0IiwiY3JlZGVudGlhbCI6eyJhY3RpdmF0ZURhdGUiOjE3NTkxMjAyMTQsImV4cGlyZURhdGUiOjE3OTMyNDgyMTQsImxpY2Vuc2VLZXkiOiJ5dW54aW5Db21tb25UZXN0Iiwibm9uY2UiOiJQLW85S3o5RTI2WSJ9LCJzaWduYXR1cmUiOiJFcUt4c2s5TTFNWGp2dWE5Z3J4MGVYVkxxdHBrMm5aWUoyMHNIM0x4LzVMT0tFL3BOTktadDdmNG04eVE5ZWFIQmxHS2NaYUdmaVlNeTdtZ1pYTjVLVFRvZzk2K2RYZmhuZ1N4UG9YUDZBUkNHdHlmZ1N1SDFtbGlxYUYyNWVrWVlRQzUwV3V5ZHFMRzJyaDB1cVhrR05oSkhtVWtRdnVndU1sVlZjc2JLelRCNGRubmtzVVhOcm12aEZXQS9IUTNqd0kyYmFaOTNlMzM4UkFjYTRlVHBTeUhkb1EzRlNGVkpxUXBWRHlJVXhOb21ORXhJT1Z2bzN5dkdRcERLTldjVUFFejFQN1R0Z3ozS1U4RnZYT09sRXNPTU5UYzRxdU9JSWp1SWNRaE1aK2FrSHlDRURHSE04TUthYkdTU2JZOXN1NWVwdjZEZUZxWjEza29wK1pHK2c9PSIsInZlcnNpb24iOiIxLjAifQ=="
 
+static const char* const RTC_CALL_STATE_STRINGS[] = {
+    "idle",
+    "pre_connecting",
+    "connecting",
+    "connected",
+};
+
 std::string NeRtcProtocol::config_file_path_ = "/spiffs/config.json";
 NeRtcProtocol::NeRtcProtocol() {
     ESP_LOGI(TAG, "Start create: Free: %u minimal: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
@@ -54,6 +61,11 @@ NeRtcProtocol::NeRtcProtocol() {
                 asr_enabled_ = asr->valueint;
                 ESP_LOGI(TAG, "local config set asr to %d", asr_enabled_?1:0);
             }
+            cJSON* rtc_call = cJSON_GetObjectItem(custom_config, "rtc_call");
+            if(rtc_call && cJSON_IsBool(rtc_call)) {
+                rtc_mode_ = rtc_call->valueint;
+                ESP_LOGI(TAG, "local config set rtc_p2p to %d", rtc_mode_?1:0);
+            }
         }
         cJSON* audio_config = cJSON_GetObjectItem(config_json, "audio_config");
         if (audio_config) {
@@ -79,14 +91,14 @@ NeRtcProtocol::NeRtcProtocol() {
 
     std::string device_id = Board::GetInstance().GetBoardName();
     ESP_LOGI(TAG, "Start create nertc sdk device_id:%s Free: %u minimal: %u", device_id.c_str(), heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
-
+#if 0
     nertc_sdk_config_t nertc_sdk_config = { 0 };
     nertc_sdk_config.app_key = local_config_appkey_.c_str();
     nertc_sdk_config.device_id = device_id.c_str();
     nertc_sdk_config.force_unsafe_mode = true;
     //如果打开服务端aec，这3个参数会由sdk内部控制
     nertc_sdk_config.audio_config.channels = 1;
-    nertc_sdk_config.audio_config.frame_duration = local_frame_duration_config > 0 ? local_frame_duration_config : OPUS_FRAME_DURATION_MS;
+    nertc_sdk_config.audio_config.frame_duration = local_frame_duration_config > 0 ? local_frame_duration_config : Application::GetInstance().OpusFrameDurationMs();
 #if CONFIG_IDF_TARGET_ESP32C3
     nertc_sdk_config.audio_config.sample_rate = 8000;
     nertc_sdk_config.audio_config.out_sample_rate = 8000; //指定下行采样率使用8k
@@ -144,9 +156,107 @@ NeRtcProtocol::NeRtcProtocol() {
     nertc_sdk_config.licence_cfg.license = local_license_config.empty() ? NERTC_DEFAULT_TEST_LICENSE : local_license_config.c_str();
     nertc_sdk_config.user_data = this;
     cJSON_Delete(config_json);
-    
     engine_ = nertc_create_engine(&nertc_sdk_config);
     auto ret = nertc_init(engine_);
+#else
+    // 第一步：准备创建引擎的配置
+    nertc_sdk_configuration_t sdk_config = { 0 };
+    nertc_sdk_configuration_init(&sdk_config);
+    sdk_config.app_key = local_config_appkey_.c_str();
+    sdk_config.device_id = device_id.c_str();
+    sdk_config.force_unsafe_mode = true;
+
+    // 音频配置
+    //如果打开服务端aec，这3个参数会由sdk内部控制
+    sdk_config.audio_config.channels = 1;
+    sdk_config.audio_config.frame_duration = local_frame_duration_config > 0 ? local_frame_duration_config : Application::GetInstance().OpusFrameDurationMs();
+#if CONFIG_IDF_TARGET_ESP32C3
+    sdk_config.audio_config.sample_rate = 8000;
+    sdk_config.audio_config.out_sample_rate = 8000; //指定下行采样率使用8k
+#else
+    sdk_config.audio_config.sample_rate = 16000;
+    sdk_config.audio_config.out_sample_rate = 16000; //指定下行采样率使用16k
+#endif
+    sdk_config.audio_config.codec_type = NERTC_SDK_AUDIO_CODEC_TYPE_OPUS;
+
+    // 可选配置
+#if CONFIG_IDF_TARGET_ESP32S3
+    sdk_config.optional_config.device_performance_level = NERTC_SDK_DEVICE_LEVEL_HIGH;
+    sdk_config.optional_config.prefer_use_psram = true;
+#elif CONFIG_IDF_TARGET_ESP32C3
+    sdk_config.optional_config.device_performance_level = NERTC_SDK_DEVICE_LEVEL_LOW;
+    sdk_config.optional_config.prefer_use_psram = false;  // ESP32C3没有PSRAM
+#else
+    sdk_config.optional_config.device_performance_level = NERTC_SDK_DEVICE_LEVEL_NORMAL;
+    sdk_config.optional_config.prefer_use_psram = false;
+#endif
+
+#if CONFIG_USE_NERTC_SERVER_AEC
+    sdk_config.optional_config.enable_server_aec = true;
+#else
+    sdk_config.optional_config.enable_server_aec = false;
+#endif
+
+    sdk_config.optional_config.custom_config = custom_config_string.c_str();
+
+    // 日志配置
+    sdk_config.log_cfg.log_level = NERTC_SDK_LOG_INFO;
+
+    // License配置
+    sdk_config.licence_cfg.license = local_license_config.empty() ? NERTC_DEFAULT_TEST_LICENSE : local_license_config.c_str();
+
+    ESP_LOGI(TAG, "Start set nertc sdk handler: Free: %u minimal: %u",
+            heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+            heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+
+    // 创建引擎
+    engine_ = nertc_create_engine_with_config(&sdk_config);
+    if (!engine_) {
+        ESP_LOGE(TAG, "Failed to create NERtc engine");
+        return;
+    }
+
+    // 第二步：准备初始化引擎的配置
+    nertc_sdk_engine_config_t engine_config = {};
+    nertc_sdk_engine_config_init(&engine_config);
+
+    // 引擎模式
+#if CONFIG_USE_NERTC_PTT_MODE
+    engine_config.engine_mode = NERTC_SDK_ENGINE_MODE_PTT;
+#else
+    engine_config.engine_mode = NERTC_SDK_ENGINE_MODE_AI;
+#endif
+
+    // 事件回调配置
+    engine_config.event_handler.on_error = OnError;
+    engine_config.event_handler.on_license_expire_warning = OnLicenseExpireWarning;
+    engine_config.event_handler.on_channel_status_changed = OnChannelStatusChanged;
+    engine_config.event_handler.on_join = OnJoin;
+    engine_config.event_handler.on_disconnect = OnDisconnect;
+    engine_config.event_handler.on_user_joined = OnUserJoined;
+    engine_config.event_handler.on_user_left = OnUserLeft;
+    engine_config.event_handler.on_user_audio_start = OnUserAudioStart;
+    engine_config.event_handler.on_user_audio_stop = OnUserAudioStop;
+    engine_config.event_handler.on_asr_caption_result = OnAsrCaptionResult;
+    engine_config.event_handler.on_ai_data = OnAiData;
+    engine_config.event_handler.on_audio_encoded_data = OnAudioData;
+
+    // 用户数据
+    engine_config.user_data = this;
+
+    // 外部网络接口
+    if (Board::GetInstance().GetBoardType() == "ml307") { //4G模组，需要外部网络IO
+        NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
+        engine_config.ext_net_handle = ext_net->GetHandle();
+    } else {
+        engine_config.ext_net_handle = nullptr;
+    }
+
+    cJSON_Delete(config_json);
+
+    // 初始化引擎
+    auto ret = nertc_init_engine(engine_, &engine_config);
+#endif
     if (ret != 0) {
         ESP_LOGE(TAG, "Failed to initialize NERtc SDK, error: %d", ret);
         return;
@@ -215,10 +325,28 @@ bool NeRtcProtocol::Start() {
 #endif
 
     // join room
-    uint32_t random_num = 100000 + (esp_random() % 900000);
-    cname_ = std::string("80") + std::to_string(random_num);
+    uint64_t uid = UID;
+    cJSON* config_json = NeRtcProtocol::ReadConfigJson();
+    if(config_json) {
+        cJSON* custom_config = cJSON_GetObjectItem(config_json, "custom_config");
+        if (custom_config && cJSON_IsObject(custom_config)) {
+            cJSON* item = cJSON_GetObjectItem(custom_config, "cname");
+            if(item && cJSON_IsString(item)) {
+                cname_ = item->valuestring;
+            }
+            item = cJSON_GetObjectItem(custom_config, "uid");
+            if(item && cJSON_IsNumber(item)) {
+                uid = item->valueint;
+            }
+        }
+        cJSON_Delete(config_json);
+    }
+    if (cname_.empty()) {
+        uint32_t random_num = 100000 + (esp_random() % 900000);
+        cname_ = std::string("80") + std::to_string(random_num);
+    }
     ESP_LOGI(TAG, "Join cname = %s", cname_.c_str());
-    auto ret = nertc_join(engine_, cname_.c_str(), checksum.c_str(), UID);
+    auto ret = nertc_join(engine_, cname_.c_str(), checksum.c_str(), uid);
     if (ret != 0) {
         ESP_LOGE(TAG, "Join failed, error: %d", ret);
         return false;
@@ -238,18 +366,22 @@ bool NeRtcProtocol::OpenAudioChannel() {
         return false;
     }
 
-    auto ret = nertc_start_ai(engine_);
-    if (ret != 0) {
-        ESP_LOGE(TAG, "Start AI failed, error: %d", ret);
-        return false;
-    }
-    if (asr_enabled_) {
-        nertc_sdk_asr_caption_config_t asr_config;
-        ret = nertc_start_asr_caption(engine_, &asr_config);
+    if (!rtc_mode_) {
+        auto ret = nertc_start_ai(engine_);
         if (ret != 0) {
-            ESP_LOGE(TAG, "Start ASR caption failed, error: %d", ret);
+            ESP_LOGE(TAG, "Start AI failed, error: %d", ret);
             return false;
         }
+        if (asr_enabled_) {
+            nertc_sdk_asr_caption_config_t asr_config;
+            ret = nertc_start_asr_caption(engine_, &asr_config);
+            if (ret != 0) {
+                ESP_LOGE(TAG, "Start ASR caption failed, error: %d", ret);
+                return false;
+            }
+        }
+    } else {
+        ESP_LOGI(TAG, "NeRtcProtocol OpenAudioChannel rtc p2p");
     }
 
     if (on_audio_channel_opened_ != nullptr) {
@@ -267,6 +399,13 @@ void NeRtcProtocol::CloseAudioChannel() {
     if (phone_call_suspend_) {
         ESP_LOGI(TAG, "phone call suspend, hand up it!!!");
         nertc_ai_hang_up(engine_);
+        return;
+    }
+    if (GetP2PCallState() == kNERtcP2PCallStateConnected) {
+        ESP_LOGE(TAG, "rtc p2p call, not support hand up");
+        return;
+    } else if (GetP2PCallState() != kNERtcP2PCallStateIdle) {
+        SetP2PCallState(kNERtcP2PCallStateIdle);
         return;
     }
 
@@ -341,9 +480,31 @@ void NeRtcProtocol::SendAecReferenceAudio(const AudioStreamPacket& packet) {
 void NeRtcProtocol::SendMcpMessage(const std::string& message) {
     if (!engine_ || !join_.load())
         return;
-    
+
     ESP_LOGI(TAG, "SendMcpMessage:%s", message.c_str());
     nertc_ai_llm_prompt(engine_, message.c_str(), 1);
+}
+
+void NeRtcProtocol::SendMcpImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) {
+    if (!engine_ || !join_.load())
+        return;
+    nertc_sdk_ai_llm_request_t* request = new nertc_sdk_ai_llm_request_t;
+    request->img_url = img_url;
+    request->img_len = img_len;
+    request->img_compress_type = compress_type;
+    request->interrupt_mode = 1;
+    request->text = const_cast<char*>(text.c_str());
+    request->img_type = (nertc_sdk_llm_image_type_e)img_type;
+    nertc_ai_llm_image(engine_, request);
+    delete request;
+
+    cJSON* data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "type", "stt");
+    cJSON_AddStringToObject(data, "text", "llm image sent");
+    if (data) {
+        on_incoming_json_(data);
+        cJSON_Delete(data);
+    }
 }
 
 void NeRtcProtocol::RequestChecksum(std::string& checksum) {
@@ -588,9 +749,12 @@ void NeRtcProtocol::OnUserJoined(const nertc_sdk_callback_context_t* ctx, const 
     NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(ctx->user_data);
     if (!instance)
         return;
-        
+
     if (instance->phone_call_suspend_) {
         Application::GetInstance().StopRing();
+    }
+    if (instance->GetP2PCallState() != kNERtcP2PCallStateIdle) {
+        instance->SetP2PCallState(kNERtcP2PCallStateConnected);
     }
 }
 
@@ -600,6 +764,10 @@ void NeRtcProtocol::OnUserLeft(const nertc_sdk_callback_context_t* ctx, const ne
     NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(ctx->user_data);
     if (!instance)
         return;
+
+    if (instance->GetP2PCallState() == kNERtcP2PCallStateConnected) {
+        instance->SetP2PCallState(kNERtcP2PCallStateIdle);
+    }
 }
 
 void NeRtcProtocol::OnUserAudioStart(const nertc_sdk_callback_context_t* ctx, uint64_t uid, nertc_sdk_media_stream_e stream_type) {
@@ -663,8 +831,12 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
             if (instance->on_incoming_json_) instance->on_incoming_json_(state_json);
             cJSON_Delete(state_json);
             cJSON_Delete(data_json);
-            if (event_str == "audio.agent.speech_stopped" && instance->phone_call_suspend_) {
-                 Application::GetInstance().StartRing();
+            if (event_str == "audio.agent.speech_stopped") {
+                if (instance->phone_call_suspend_) {
+                    Application::GetInstance().StartRing();
+                } else if (instance->GetP2PCallState() == kNERtcP2PCallStatePreConnecting) {
+                    instance->SetP2PCallState(kNERtcP2PCallStateConnecting);
+                }
             }
             return;
         }
@@ -739,7 +911,17 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
             std::string phone_number = phoneNumber_item->valuestring;
             std::string phone_name = phoneName_item->valuestring;
             ESP_LOGI(TAG, "phone call start name:%s -- number:%s . and stop ai", phone_name.c_str(), phone_number.c_str());
-        }  else { //尝试转换成到小智通用iot格式
+        } else if (name == "rtc_call") {
+            if (instance->GetP2PCallState() == kNERtcP2PCallStateIdle) {
+                ESP_LOGI(TAG, "start rtc call");
+                instance->SetP2PCallState(kNERtcP2PCallStatePreConnecting);
+            } else if (instance->GetP2PCallState() == kNERtcP2PCallStatePreConnecting) {
+                ESP_LOGW(TAG, "pre connecting !! error state, begin ringing");
+                instance->SetP2PCallState(kNERtcP2PCallStateConnecting);
+            } else {
+                ESP_LOGE(TAG, "rtc call error state: %s", RTC_CALL_STATE_STRINGS[instance->GetP2PCallState()]);
+            }
+        } else { //尝试转换成到小智通用iot格式
             cJSON* arguments_json = cJSON_Parse(arguments.c_str());
             cJSON* state_json = instance->BuildApplicationXiaoZhiIotProtocol(name, arguments_json);
             if (!state_json) {
@@ -886,6 +1068,7 @@ void NeRtcProtocol::UnmountFileSystem() {
 
 #if NERTC_ENABLE_CONFIG_FILE
 cJSON* NeRtcProtocol::ReadConfigJson() {
+    MountFileSystem();
     FILE* file = fopen(config_file_path_.c_str(), "r");
     if (!file) {
         ESP_LOGE(TAG, "Failed to open file: %s", config_file_path_.c_str());
@@ -918,7 +1101,7 @@ cJSON* NeRtcProtocol::ReadConfigJson() {
         return nullptr;
     }
 
-    buffer[file_size] = '\0'; 
+    buffer[file_size] = '\0';
     ESP_LOGD(TAG, "Config file content: %s", buffer); //这个日志要打印出来，排查问题依赖
 
     cJSON* json = cJSON_Parse(buffer);
@@ -932,3 +1115,41 @@ cJSON* NeRtcProtocol::ReadConfigJson() {
     return json;
 }
 #endif
+
+void NeRtcProtocol::SetP2PCallState(NERtcP2PCallState state) {
+    if (state == rtc_p2p_state_ || !engine_)
+        return;
+    ESP_LOGI(TAG, "SetP2PCallState: %s", RTC_CALL_STATE_STRINGS[state]);
+    rtc_p2p_state_ = state;
+    switch (state)
+    {
+    case kNERtcP2PCallStateIdle: {
+        auto ret = nertc_start_ai(engine_);
+        if (ret != 0) {
+            ESP_LOGE(TAG, "Start AI failed, error: %d", ret);
+        }
+        Board::GetInstance().GetDisplay()->SetEmotionForce("neutral", false);
+        Application::GetInstance().StopRing();
+    } break;
+    case kNERtcP2PCallStatePreConnecting: {
+        SendMcpMessage("请播报以下内容：房间" + cname_ + "，房间" + cname_);
+    } break;
+    case kNERtcP2PCallStateConnecting: {
+        auto ret = nertc_stop_ai(engine_);
+        if (ret != 0) {
+            ESP_LOGE(TAG, "Stop AI failed, error: %d", ret);
+        }
+        Board::GetInstance().GetDisplay()->SetEmotionForce("call", true);
+        Application::GetInstance().StartRing();
+    } break;
+    case kNERtcP2PCallStateConnected: {
+        Application::GetInstance().StopRing();
+    } break;
+    default:
+        break;
+    }
+}
+
+NERtcP2PCallState NeRtcProtocol::GetP2PCallState() {
+    return rtc_p2p_state_;
+}
