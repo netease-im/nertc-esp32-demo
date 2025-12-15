@@ -127,6 +127,10 @@ typedef struct nertc_sdk_configuration {
   nertc_sdk_log_config_t log_cfg;                     /**< 日志配置 */
 } nertc_sdk_configuration_t;
 
+typedef struct nertc_sdk_engine_feature_config {
+  bool enable_mcp_server; /**< 是否开启 mcp server 功能 */
+} nertc_sdk_engine_feature_config_t;
+
 typedef struct nertc_sdk_user_info {
   /**
    * @if Chinese
@@ -232,6 +236,12 @@ typedef struct nertc_sdk_ai_llm_request {
   /** 图片类型 */
   nertc_sdk_llm_image_type_e img_type;
 } nertc_sdk_ai_llm_request_t;
+
+typedef struct nertc_sdk_mcp_tool_result {
+  const char* payload;  // 工具调用结果, 遵循 JSON-RPC 2.0 规范
+  int payload_len;      // 工具调用结果的长度
+} nertc_sdk_mcp_tool_result_t;
+
 
 #ifdef __cplusplus
 }

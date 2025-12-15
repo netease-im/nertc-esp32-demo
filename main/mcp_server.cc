@@ -94,14 +94,101 @@ void McpServer::AddCommonTools() {
             PropertyList({
                 Property("question", kPropertyTypeString)
             }),
+#ifndef CONFIG_CONNECTION_TYPE_NERTC
             [camera](const PropertyList& properties) -> ReturnValue {
                 if (!camera->Capture()) {
                     return "{\"success\": false, \"message\": \"Failed to capture photo\"}";
                 }
                 auto question = properties["question"].value<std::string>();
                 return camera->Explain(question);
-            });
+            }
+#else
+            [this](const PropertyList& properties) -> ReturnValue {
+                auto& instance = Application::GetInstance();
+                instance.TakePhoto(properties["question"].value<std::string>());
+                return true;
+            }
+#endif  
+        );
     }
+    
+    AddTool("self.set_alarm",
+        "设置闹钟工具。支持两种设置方式：\n"
+        "1. 相对时间：设置多少分钟后的闹钟（如：\"5分钟后提醒我\"、\"半小时后叫我\"、\"1小时15分钟后的闹钟\"）\n"
+        "2. 绝对时间：设置未来具体时间点的闹钟（如：\"明天早上8点\"、\"下午3点半\"、\"今天晚上10点30分\"）\n\n"
+        "使用步骤：\n"
+        "1. 获取当前北京时间（格式：YYYY-MM-DD HH:MM:SS）并赋值给 `current_time`\n"
+        "2. 根据用户输入解析目标时间：\n"
+        "   - 相对时间：从当前时间加上指定的分钟数\n"
+        "   - 绝对时间：解析具体的日期和时间（今天/明天 + 具体时间点）\n"
+        "3. 将解析后的目标时间字符串赋值给 `target_time_str`（格式：YYYY-MM-DD HH:MM:SS）\n"
+        "4. 将闹钟名称赋值给 `name`（可选，默认值为空）\n\n"
+        "注意事项：\n"
+        "- 如果只说时间点（如\"8点\"）没有指定日期，且该时间已过，则设置为明天的该时间\n",
+        PropertyList({
+            Property("current_time", kPropertyTypeString),
+            Property("target_time_str", kPropertyTypeString),
+            Property("name", kPropertyTypeString)
+        }),
+        [](const PropertyList& properties) -> ReturnValue {
+            ESP_LOGI(TAG, "set_alarm: %s", properties.to_json().c_str());
+            
+            // 获取参数
+            std::string current_time = properties["current_time"].value<std::string>();
+            std::string target_time_str = properties["target_time_str"].value<std::string>();
+            std::string name = properties["name"].value<std::string>();
+            
+            // 解析时间字符串 (格式: 2025-12-08 17:28:15)
+            auto parse_time = [](const std::string& time_str) -> time_t {
+                struct tm tm = {};
+                int year, month, day, hour, minute, second;
+                if (sscanf(time_str.c_str(), "%d-%d-%d %d:%d:%d", 
+                          &year, &month, &day, &hour, &minute, &second) == 6) {
+                    tm.tm_year = year - 1900;  // year since 1900
+                    tm.tm_mon = month - 1;     // month 0-11
+                    tm.tm_mday = day;
+                    tm.tm_hour = hour;
+                    tm.tm_min = minute;
+                    tm.tm_sec = second;
+                    tm.tm_isdst = -1;  // let system determine DST
+                    return mktime(&tm);
+                }
+                return -1;
+            };
+            
+            time_t current_timestamp = parse_time(current_time);
+            time_t target_timestamp = parse_time(target_time_str);
+            
+            if (current_timestamp == -1 || target_timestamp == -1) {
+                ESP_LOGE(TAG, "Failed to parse time strings. current: %s, target: %s", 
+                        current_time.c_str(), target_time_str.c_str());
+                return false;
+            }
+            
+            // 计算时间差（秒）
+            int target_time_s = (int)(target_timestamp - current_timestamp);
+            
+            if (target_time_s <= 0) {
+                ESP_LOGE(TAG, "Target time is in the past or invalid. Difference: %d seconds", target_time_s);
+                return false;
+            }
+            
+            ESP_LOGI(TAG, "Alarm set for %d seconds from now (%s -> %s)", 
+                    target_time_s, current_time.c_str(), target_time_str.c_str());
+            
+            auto& instance = Application::GetInstance();
+            instance.SetAlarmTime(target_time_s, name);
+            return true;
+        });
+
+    AddTool("self.cancel_alarm",
+        "识别用户取消闹钟的意图",
+        PropertyList(),
+        [](const PropertyList& properties) -> ReturnValue {
+            auto& instance = Application::GetInstance();
+            instance.CancelAlarm();
+            return true;
+        });
 
     // Restore the original tools list to the end of the tools list
     tools_.insert(tools_.end(), original_tools.begin(), original_tools.end());
@@ -255,7 +342,7 @@ void McpServer::ReplyError(int id, const std::string& message) {
 }
 
 void McpServer::GetToolsList(int id, const std::string& cursor) {
-    const int max_payload_size = 8000;
+    const int max_payload_size = 2000;
     std::string json = "{\"tools\":[";
     
     bool found_cursor = cursor.empty();
@@ -341,7 +428,7 @@ void McpServer::DoToolCall(int id, const std::string& tool_name, const cJSON* to
                 return;
             }
         }
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         ESP_LOGE(TAG, "tools/call: %s", e.what());
         ReplyError(id, e.what());
         return;
