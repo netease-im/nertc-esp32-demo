@@ -120,8 +120,6 @@ void Protocol::SendMcpMessage(const std::string& payload) {
     SendText(message);
 }
 
-void Protocol::SendMcpImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) {}
-
 bool Protocol::IsTimeout() const {
     const int kTimeoutSeconds = 120;
     auto now = std::chrono::steady_clock::now();

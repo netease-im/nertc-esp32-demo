@@ -539,7 +539,7 @@ config AUDIO_DEBUG_UDP_SERVER
 
 choice IOT_PROTOCOL
     prompt "IoT Protocol"
-    default IOT_PROTOCOL_XIAOZHI
+    default IOT_PROTOCOL_MCP
     help
         IoT 协议，用于获取设备状态与发送控制指令
     config IOT_PROTOCOL_MCP

@@ -51,6 +51,8 @@ enum DeviceState {
     kDeviceStateFatalError
 };
 
+class AlarmManager;
+
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
 #define NERTC_BOARD_NAME "yunxin"
 #endif
@@ -74,7 +76,7 @@ public:
     void DismissAlert();
     void AbortSpeaking(AbortReason reason);
     void ToggleChatState();
-    void TakePhoto();
+    void TakePhoto(const std::string& request);
     void SendMcpNetworkImage();
     void StartListening();
     void StopListening();
@@ -92,6 +94,9 @@ public:
     void LiftUp();
     void StartRing();
     void StopRing();
+    void SetAlarmTime(int target_time_s, const std::string& name);
+    void CancelAlarm();
+    bool IsAlarmActive() const { return alarm_active_; }
 
 private:
     Application();
@@ -181,6 +186,7 @@ private:
     void OnClockTimer();
     void SetListeningMode(ListeningMode mode);
     void AudioLoop();
+    void StartAlarmRing();
 
     int touch_count_ = 0;
     bool ai_sleep_ = false;
@@ -193,6 +199,14 @@ private:
     static void RingTimerCb(TimerHandle_t xTimer);
     TimerHandle_t ring_timer_ = nullptr;
     bool ringing_ = false;
+
+    static void AlarmPlayTimerCb(TimerHandle_t xTimer);
+    TimerHandle_t alarm_play_timer_ = nullptr;
+    std::atomic<bool> alarm_active_{false};
+    std::string alarm_name_;
+
+    void OnAlarm(int time, const std::string& name);
+    std::unique_ptr<AlarmManager> alarm_manager_;
 };
 
 #endif // _APPLICATION_H_

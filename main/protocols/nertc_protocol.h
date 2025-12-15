@@ -30,8 +30,9 @@ public:
     bool IsAudioChannelOpened() const override;
     bool SendAudio(const AudioStreamPacket& packet) override;
     void SendAecReferenceAudio(const AudioStreamPacket& packet) override;
-    void SendMcpMessage(const std::string& message) override;
-    void SendMcpImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) override;
+
+    void SendLlmText(const std::string& text) override;
+    void SendLlmImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) override;
 private:
     void RequestChecksum(std::string& checksum);
     void ParseFunctionCall(cJSON* data, std::string& arguments, std::string& name);
@@ -69,7 +70,6 @@ private:
     esp_timer_handle_t asr_timer_ { nullptr };
     esp_timer_handle_t close_timer_ { nullptr };
 
-    bool phone_call_suspend_ { false }; 
 private:
     bool SendText(const std::string& text) override;
 

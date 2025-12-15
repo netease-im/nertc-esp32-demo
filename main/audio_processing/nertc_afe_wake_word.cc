@@ -5,8 +5,8 @@
 #include <model_path.h>
 #include <arpa/inet.h>
 #include <sstream>
-
 #define DETECTION_RUNNING_EVENT 1
+#define DETECTION_STOP_EVENT 2
 #include "protocols/nertc_protocol.h"
 
 #define TAG "NertcAfeWakeWord"
@@ -125,8 +125,12 @@ NertcAfeWakeWord::~NertcAfeWakeWord() {
 }
 
 void NertcAfeWakeWord::Initialize(AudioCodec* codec) {
+    if(initialized_)
+    {
+        return;
+    }
+    initialized_ = true;
     codec_ = codec;
-    nertc_wakeup_sdk_config_t config;
     nertc_wakeup_sdk_event_handle_t handle =
     {
         .on_wake_word_detected = on_wake_word_detected_handle
@@ -160,8 +164,7 @@ void NertcAfeWakeWord::Initialize(AudioCodec* codec) {
         config.custom_config = custom_config_string.c_str();
         cJSON_Delete(config_json);
     }
-
-    nertc_wake_word_ = nertc_wakeup_create(&config); 
+    nertc_wake_word_ = nertc_wakeup_create(&config);
 #if defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS) 
     nertc_wakeup_init(nertc_wake_word_, 1, 0);
 #else
@@ -194,6 +197,8 @@ void NertcAfeWakeWord::StopDetection() {
     if (nertc_wake_word_ != nullptr) {
         nertc_wakeup_stop_detect(nertc_wake_word_);
     }
+    xEventGroupSetBits(event_group_, DETECTION_STOP_EVENT);
+    destory_inner_models_ = true;
 }
 
 bool NertcAfeWakeWord::IsDetectionRunning() {
@@ -224,9 +229,32 @@ void NertcAfeWakeWord::AudioDetectionTask() {
 
     while (true) 
     {
+        if(destory_inner_models_)
+        {
+            xEventGroupWaitBits(event_group_, DETECTION_STOP_EVENT, pdTRUE, pdFALSE, portMAX_DELAY);
+            if(nertc_wake_word_)
+            {
+                nertc_wakeup_destory(nertc_wake_word_);
+                nertc_wake_word_ = nullptr;
+                ESP_LOGI(TAG, "Destroy inner wake word models");
+            }
+            destory_inner_models_ = false;
+            continue;
+        }
         xEventGroupWaitBits(event_group_, DETECTION_RUNNING_EVENT, pdFALSE, pdTRUE, portMAX_DELAY);
-        nertc_wakeup_detect(nertc_wake_word_);
-        
+        if(!nertc_wake_word_ && initialized_)
+        {
+            nertc_wake_word_ = nertc_wakeup_create(&config);
+#if defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS) 
+            nertc_wakeup_init(nertc_wake_word_, 1, 0);
+#else
+            nertc_wakeup_init(nertc_wake_word_, codec_->input_channels(), codec_->input_reference());
+#endif
+        }
+        if(nertc_wake_word_)
+        {
+            nertc_wakeup_detect(nertc_wake_word_);
+        }
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

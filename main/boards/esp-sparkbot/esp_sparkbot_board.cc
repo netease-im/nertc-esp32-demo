@@ -84,6 +84,10 @@ private:
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
+            if (app.IsAlarmActive()) {
+                app.CancelAlarm();
+                return;
+            }
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
             }
@@ -92,11 +96,20 @@ private:
 
         boot_button_.OnDoubleClick([this]() {
             auto& app = Application::GetInstance();
-            app.TakePhoto();
+            if (app.IsAlarmActive()) {
+                app.CancelAlarm();
+                return;
+            }
+            std::string request = "这是什么？";
+            app.TakePhoto(request);
         });
 
         boot_button_.OnLongPress([this]() {
             auto& app = Application::GetInstance();
+            if (app.IsAlarmActive()) {
+                app.CancelAlarm();
+                return;
+            }
             app.SendMcpNetworkImage();
         });
     }

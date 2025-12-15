@@ -9,6 +9,7 @@
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
     #include "nertc_protocol.h"
 #endif
+#include "alarm.h"
 #include "font_awesome_symbols.h"
 #include "iot/thing_manager.h"
 #include "assets/lang_config.h"
@@ -219,6 +220,15 @@ Application::Application() {
                                 Application::RingTimerCb);
     if (!ring_timer_) {
         ESP_LOGE(TAG, "Create ring_timer_ failed");
+    }
+
+    alarm_play_timer_ = xTimerCreate("alarm_play",
+                                pdMS_TO_TICKS(2000),
+                                pdTRUE,
+                                this,
+                                Application::AlarmPlayTimerCb);
+    if (!alarm_play_timer_) {
+        ESP_LOGE(TAG, "Create alarm_play_timer_ failed");
     }
 }
 
@@ -528,8 +538,8 @@ void Application::ToggleChatState() {
     }
 }
 
-void Application::TakePhoto() {
-    Schedule([this]() {
+void Application::TakePhoto(const std::string& request) {
+    Schedule([this, request]() {
         Camera* camera = Board::GetInstance().GetCamera();
         if (camera) {
             camera->Capture();
@@ -571,7 +581,7 @@ void Application::TakePhoto() {
                 size_t encoded_size = 0;
                 int ret = mbedtls_base64_encode(base64_image + strlen(image_format), olen - strlen(image_format), &encoded_size, jpeg.data, jpeg.len);
                 if (ret == 0) {
-                    protocol_->SendMcpImage((const char *)base64_image, strlen(image_format) + encoded_size, 0, "这是什么？", 0);
+                    protocol_->SendLlmImage((const char *)base64_image, strlen(image_format) + encoded_size, 0, request, 0);
                     ESP_LOGI(TAG, "Successfully encoded JPEG to base64, size: %u", olen);
                 } else {
                     ESP_LOGE(TAG, "mbedtls_base64_encode failed: %d", ret);
@@ -592,7 +602,7 @@ void Application::TakePhoto() {
 void Application::SendMcpNetworkImage() {
     Schedule([this]() {
         std::string img_url = "https://pics5.baidu.com/feed/5ab5c9ea15ce36d3f5f01f21f488f897e850b1b3.jpeg";
-        protocol_->SendMcpImage(img_url.c_str(), img_url.size(), 0, "这是什么？", 1);
+        protocol_->SendLlmImage(img_url.c_str(), img_url.size(), 0, "这是什么？", 1);
     });
 }
 
@@ -647,11 +657,7 @@ void Application::StopListening() {
 }
 
 void Application::ResetOpusParameters() {
-#ifdef CONFIG_IDF_TARGET_ESP32C3 
-    opus_frame_duration_ = 20;
-#else
     opus_frame_duration_ = 60;
-#endif
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
     auto* config_json = NeRtcProtocol::ReadConfigJson();
     if(config_json) {
@@ -925,7 +931,7 @@ void Application::Start() {
             }
         }
         background_task_->Schedule([this, data = std::move(data)]() mutable {
-#if defined(CONFIG_USE_NERTC_SERVER_AEC) && defined(CONFIG_IDF_TARGET_ESP32C3) //c3开aec，则上行不编码
+#if 0  //defined(CONFIG_USE_NERTC_SERVER_AEC) && defined(CONFIG_IDF_TARGET_ESP32C3) //c3开aec，则上行不编码
             AudioStreamPacket packet;
             packet.pcm_payload = std::move(data);
             packet.sample_rate = protocol_->server_sample_rate();
@@ -1086,6 +1092,9 @@ void Application::Start() {
         ResetDecoder();
         PlaySound(Lang::Sounds::P3_AGENT);
     }
+
+    alarm_manager_ = std::make_unique<AlarmManager>();
+    alarm_manager_->OnAlarm(std::bind(&Application::OnAlarm, this, std::placeholders::_1, std::placeholders::_2));
 
     // Print heap stats
     SystemInfo::PrintHeapStats();
@@ -1313,6 +1322,7 @@ void Application::OnNertcAudioOutput(AudioStreamPacket&& packet) {
         std::vector<uint8_t> opus_data_copy = packet.payload;
 #endif
         if (!opus_decoder_->Decode(std::move(packet.payload), pcm)) {
+            ESP_LOGW(TAG, "packet.payload size:%d", (int)packet.payload.size());
             return;
         }
 
@@ -1795,10 +1805,10 @@ void Application::TouchActive(int value_head, int value_body) {
             if (device_state_ == kDeviceStateListening) {
                 if (value_head > last_value_head * 1.1) {
                     touch_count_ = 50;
-                    protocol_->SendMcpMessage("正在抚摸你的头，请提供相关的情绪价值，回答");
+                    protocol_->SendLlmText("正在抚摸你的头，请提供相关的情绪价值，回答");
                 } else if (value_body > last_value_body * 1.1) {
                     touch_count_ = 50;
-                    protocol_->SendMcpMessage("正在抚摸你的身体，请提供相关的情绪价值，回答");
+                    protocol_->SendLlmText("正在抚摸你的身体，请提供相关的情绪价值，回答");
                 }
             }
         } else if (device_state_ == kDeviceStateIdle) {
@@ -1877,7 +1887,7 @@ void Application::Shake(float mag, float delta, bool is_strong) {
         // if (is_strong) {
         //     ToggleChatState();
         //     Schedule([this]() {
-        //         protocol_->SendMcpMessage("你被轻轻摇醒。请以激动的情绪表达。");
+        //         protocol_->SendLlmText("你被轻轻摇醒。请以激动的情绪表达。");
         //     });
         // }
         if (touch_active_) {
@@ -1923,9 +1933,9 @@ void Application::Shake(float mag, float delta, bool is_strong) {
     }
     if (device_state_ == kDeviceStateListening) {
         if (is_strong) {
-            protocol_->SendMcpMessage("你被剧烈摇晃。请以委屈/迷糊/激动等情绪表达。");
+            protocol_->SendLlmText("你被剧烈摇晃。请以委屈/迷糊/激动等情绪表达。");
         } else if (device_state_ == kDeviceStateListening) {
-            protocol_->SendMcpMessage("正在轻微摇晃你。请以平和、安抚的语气回应，如果连续2次以上以委屈/迷糊/激动等情绪表达。");
+            protocol_->SendLlmText("正在轻微摇晃你。请以平和、安抚的语气回应，如果连续2次以上以委屈/迷糊/激动等情绪表达。");
         }
     }
 }
@@ -1933,7 +1943,7 @@ void Application::Shake(float mag, float delta, bool is_strong) {
 void Application::LiftUp() {
     ESP_LOGI(TAG, " LiftUp");
     if (device_state_ == kDeviceStateListening) {
-        protocol_->SendMcpMessage("你被举高高。请以快乐、兴奋的语气回应。");
+        protocol_->SendLlmText("你被举高高。请以快乐、兴奋的语气回应。");
     }
 }
 
@@ -1988,4 +1998,61 @@ void Application::StopRing() {
         packet.frame_duration = OpusFrameDurationMs();
         audio_decode_queue_.emplace_back(std::move(packet));
     }
+}
+
+void Application::StartAlarmRing() {
+    Schedule([this]() {
+        if (alarm_active_) {
+            auto display = Board::GetInstance().GetDisplay();
+            if (display) {
+                display->SetChatMessage("assistant", alarm_name_.c_str());
+            }
+            ResetDecoder();
+            PlaySound(Lang::Sounds::P3_RING);
+        }
+    });
+}
+
+void Application::AlarmPlayTimerCb(TimerHandle_t xTimer) {
+    auto* self = static_cast<Application*>(pvTimerGetTimerID(xTimer));
+    if (self) {
+        self->StartAlarmRing();
+    }
+}
+
+void Application::OnAlarm(int time, const std::string& name) {
+    ESP_LOGI(TAG, "OnAlarm: %d, %s", time, name.c_str());
+    alarm_active_ = true;
+    alarm_name_ = name;
+    xTimerStart(alarm_play_timer_, 0);
+}
+
+void Application::SetAlarmTime(int target_time_s, const std::string& name) {
+    ESP_LOGI(TAG, "SetAlarmTime: %d, %s", target_time_s, name.c_str());
+    if (target_time_s <= 0) {
+        ESP_LOGW(TAG, "SetAlarmTime: target_time_s <= 0");
+        return;
+    }
+    if (alarm_manager_) {
+        alarm_manager_->SetAlarm(target_time_s, name);
+    }
+}
+
+void Application::CancelAlarm() {
+    ESP_LOGI(TAG, "CancelAlarm");
+    Schedule([this]() {
+        if (!alarm_active_) {
+            return;
+        }
+        xTimerStop(alarm_play_timer_, 0);
+        ResetDecoder();
+        alarm_active_ = false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (int i = 0; i < 2; ++i) {
+            AudioStreamPacket packet;
+            packet.sample_rate = 16000;
+            packet.frame_duration = OpusFrameDurationMs();
+            audio_decode_queue_.emplace_back(std::move(packet));
+        }
+    });
 }

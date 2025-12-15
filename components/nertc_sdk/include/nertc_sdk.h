@@ -154,7 +154,7 @@ NERTC_SDK_API int nertc_start_ai(nertc_sdk_engine_t engine);
 NERTC_SDK_API int nertc_stop_ai(nertc_sdk_engine_t engine);
 
 /**
- * @brief 手动打断AI
+ * @brief 手动打断AI，打电话过程中可以挂断电话
  * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
  * @return 方法调用结果：<br>
  *         -   0：成功 <br>
@@ -179,15 +179,6 @@ NERTC_SDK_API int nertc_ai_manual_start_listen(nertc_sdk_engine_t engine);
  *         - 非0：失败 <br>
  */
 NERTC_SDK_API int nertc_ai_manual_stop_listen(nertc_sdk_engine_t engine);
-
-/**
- * @brief 挂断电话
- * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
- * @return 方法调用结果：<br>
- *         -   0：成功 <br>
- *         - 非0：失败 <br>
- */
-NERTC_SDK_API int nertc_ai_hang_up(nertc_sdk_engine_t engine);
 
 /**
  * @brief AI 文本请求
@@ -229,6 +220,17 @@ NERTC_SDK_API int nertc_ai_llm_image(nertc_sdk_engine_t engine, nertc_sdk_ai_llm
 NERTC_SDK_API int nertc_ai_external_tts(nertc_sdk_engine_t engine, const char* text, int interrupt_mode, bool add_context);
 
 /**
+ * @brief 回复 mcp tool call 的结果
+ * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
+ * @param result：mcp tool call 的详细结果，类型详见: {@link nertc_sdk_mcp_tool_result_t}
+ * @return 方法调用结果：<br>
+ *              -  0：成功 <br>
+ *              - 非0：失败 <br>
+ * 
+ */
+NERTC_SDK_API int nertc_ai_reply_mcp_tool_call(nertc_sdk_engine_t engine, nertc_sdk_mcp_tool_result_t* result);
+
+/**
  * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  *                                                  结构体默认初始化函数
  * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -258,6 +260,10 @@ NERTC_SDK_API void nertc_sdk_asr_caption_config_init(nertc_sdk_asr_caption_confi
 NERTC_SDK_API void nertc_sdk_asr_caption_result_init(nertc_sdk_asr_caption_result_t* result);
 
 NERTC_SDK_API void nertc_sdk_ai_data_result_init(nertc_sdk_ai_data_result_t* result);
+
+NERTC_SDK_API void nertc_sdk_engine_feature_config_init(nertc_sdk_engine_feature_config_t* config);
+
+NERTC_SDK_API void nertc_sdk_mcp_tool_result_init(nertc_sdk_mcp_tool_result_t* result);
 
 #ifdef __cplusplus
 }

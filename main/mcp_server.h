@@ -94,6 +94,13 @@ public:
             if (has_default_value_) {
                 cJSON_AddBoolToObject(json, "default", value<bool>());
             }
+
+            // add description
+            std::string description = "Boolean parameter";
+            if (has_default_value_) {
+                description += " with default value " + std::string(value<bool>() ? "true" : "false");
+            }
+            cJSON_AddStringToObject(json, "description", description.c_str());
         } else if (type_ == kPropertyTypeInteger) {
             cJSON_AddStringToObject(json, "type", "integer");
             if (has_default_value_) {
@@ -105,11 +112,46 @@ public:
             if (max_value_.has_value()) {
                 cJSON_AddNumberToObject(json, "maximum", max_value_.value());
             }
+
+            // add description
+            std::string description = "Integer parameter";
+            std::vector<std::string> parts;
+            if (min_value_.has_value() && max_value_.has_value()) {
+                parts.push_back("range " + std::to_string(min_value_.value()) +  " to " + std::to_string(max_value_.value()));
+            } else if (min_value_.has_value()) {
+                parts.push_back("minimum " + std::to_string(min_value_.value()));
+            } else if (max_value_.has_value()) {
+                parts.push_back("maximum " + std::to_string(max_value_.value()));
+            }
+            if (has_default_value_) {
+                parts.push_back("default " + std::to_string(value<int>()));
+            }
+            
+            if (!parts.empty()) {
+                description += " with ";
+                for (size_t i = 0; i < parts.size(); ++i) {
+                    if (i > 0) description += (i == parts.size() - 1) ? " and " : ", ";
+                    description += parts[i];
+                }
+            }
+            cJSON_AddStringToObject(json, "description", description.c_str());
         } else if (type_ == kPropertyTypeString) {
             cJSON_AddStringToObject(json, "type", "string");
             if (has_default_value_) {
                 cJSON_AddStringToObject(json, "default", value<std::string>().c_str());
             }
+
+            // add description
+            std::string description = "String parameter";
+            if (has_default_value_) {
+                const std::string& default_str = value<std::string>();
+                if (default_str.empty()) {
+                    description += " with default empty string";
+                } else {
+                    description += " with default \"" + default_str + "\"";
+                }
+            }
+            cJSON_AddStringToObject(json, "description", description.c_str());
         }
         
         char *json_str = cJSON_PrintUnformatted(json);

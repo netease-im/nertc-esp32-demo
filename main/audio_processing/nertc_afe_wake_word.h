@@ -54,6 +54,9 @@ private:
     std::list<std::vector<uint8_t>> wake_word_opus_;
     std::mutex wake_word_mutex_;
     std::condition_variable wake_word_cv_;
+    nertc_wakeup_sdk_config_t config;
+    bool initialized_ = false;
+    bool destory_inner_models_ = false;
 
     void StoreWakeWordData(const int16_t* data, size_t size);
     void AudioDetectionTask();
