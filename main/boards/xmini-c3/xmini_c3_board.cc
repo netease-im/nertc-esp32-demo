@@ -153,24 +153,24 @@ private:
         auto& thing_manager = iot::ThingManager::GetInstance();
         thing_manager.AddThing(iot::CreateThing("Speaker"));
 #elif CONFIG_IOT_PROTOCOL_MCP
-        auto& mcp_server = McpServer::GetInstance();
-        mcp_server.AddTool("self.set_press_to_talk",
-            "Switch between press to talk mode (长按说话) and click to talk mode (单击说话).\n"
-            "The mode can be `press_to_talk` or `click_to_talk`.",
-            PropertyList({
-                Property("mode", kPropertyTypeString)
-            }),
-            [this](const PropertyList& properties) -> ReturnValue {
-                auto mode = properties["mode"].value<std::string>();
-                if (mode == "press_to_talk") {
-                    SetPressToTalkEnabled(true);
-                    return true;
-                } else if (mode == "click_to_talk") {
-                    SetPressToTalkEnabled(false);
-                    return true;
-                }
-                throw std::runtime_error("Invalid mode: " + mode);
-            });
+        // auto& mcp_server = McpServer::GetInstance();
+        // mcp_server.AddTool("self.set_press_to_talk",
+        //     "Switch between press to talk mode (长按说话) and click to talk mode (单击说话).\n"
+        //     "The mode can be `press_to_talk` or `click_to_talk`.",
+        //     PropertyList({
+        //         Property("mode", kPropertyTypeString)
+        //     }),
+        //     [this](const PropertyList& properties) -> ReturnValue {
+        //         auto mode = properties["mode"].value<std::string>();
+        //         if (mode == "press_to_talk") {
+        //             SetPressToTalkEnabled(true);
+        //             return true;
+        //         } else if (mode == "click_to_talk") {
+        //             SetPressToTalkEnabled(false);
+        //             return true;
+        //         }
+        //         throw std::runtime_error("Invalid mode: " + mode);
+        //     });
 #endif
     }
 
