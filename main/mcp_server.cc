@@ -162,7 +162,7 @@ void McpServer::AddCommonTools() {
             if (current_timestamp == -1 || target_timestamp == -1) {
                 ESP_LOGE(TAG, "Failed to parse time strings. current: %s, target: %s", 
                         current_time.c_str(), target_time_str.c_str());
-                return false;
+                return "{\"success\": false, \"message\": \"Invalid time format\"}";
             }
             
             // 计算时间差（秒）
@@ -170,15 +170,26 @@ void McpServer::AddCommonTools() {
             
             if (target_time_s <= 0) {
                 ESP_LOGE(TAG, "Target time is in the past or invalid. Difference: %d seconds", target_time_s);
-                return false;
+                return "{\"success\": false, \"message\": \"Target time is in the past or invalid\"}";
             }
             
             ESP_LOGI(TAG, "Alarm set for %d seconds from now (%s -> %s)", 
                     target_time_s, current_time.c_str(), target_time_str.c_str());
             
             auto& instance = Application::GetInstance();
-            instance.SetAlarmTime(target_time_s, name);
-            return true;
+            AlarmError error = instance.SetAlarmTime(target_time_s, name);
+            switch (error) {
+                case ALARM_ERROR_NONE:
+                    return "{\"success\": true, \"message\": \"Alarm set successfully\"}";
+                case ALARM_ERROR_TOO_MANY_ALARMS:
+                    return "{\"success\": false, \"message\": \"Only one alarm can be set at a time, do you want to cancel the existing alarm?\"}";
+                case ALARM_ERROR_INVALID_ALARM_TIME:
+                    return "{\"success\": false, \"message\": \"Invalid alarm time\"}";
+                case ALARM_ERROR_INVALID_ALARM_MANAGER:
+                    return "{\"success\": false, \"message\": \"Invalid alarm manager\"}";
+                default:
+                    return "{\"success\": false, \"message\": \"Unknown error\"}";
+            }
         });
 
     AddTool("self.cancel_alarm",
@@ -342,7 +353,11 @@ void McpServer::ReplyError(int id, const std::string& message) {
 }
 
 void McpServer::GetToolsList(int id, const std::string& cursor) {
+#if CONFIG_IDF_TARGET_ESP32C3
+    const int max_payload_size = 1500;
+#else
     const int max_payload_size = 2000;
+#endif
     std::string json = "{\"tools\":[";
     
     bool found_cursor = cursor.empty();

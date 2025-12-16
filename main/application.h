@@ -24,6 +24,7 @@
 #include "audio_processor.h"
 #include "wake_word.h"
 #include "audio_debugger.h"
+#include "alarm.h"
 
 #define SCHEDULE_EVENT (1 << 0)
 #define SEND_AUDIO_EVENT (1 << 1)
@@ -94,7 +95,7 @@ public:
     void LiftUp();
     void StartRing();
     void StopRing();
-    void SetAlarmTime(int target_time_s, const std::string& name);
+    AlarmError SetAlarmTime(int target_time_s, const std::string& name);
     void CancelAlarm();
     bool IsAlarmActive() const { return alarm_active_; }
 

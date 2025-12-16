@@ -9,7 +9,6 @@
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
     #include "nertc_protocol.h"
 #endif
-#include "alarm.h"
 #include "font_awesome_symbols.h"
 #include "iot/thing_manager.h"
 #include "assets/lang_config.h"
@@ -627,12 +626,26 @@ void Application::StartListening() {
                 ai_sleep_ = false;
             }
 
-            SetListeningMode(kListeningModeManualStop);
+            ListeningMode mode = aec_mode_ == kAecOff ? 
+#if CONFIG_USE_NERTC_PTT_MODE
+            kListeningModeManualStop :
+#else
+            kListeningModeAutoStop : 
+#endif
+            kListeningModeRealtime;
+            SetListeningMode(mode);
         });
     } else if (device_state_ == kDeviceStateSpeaking) {
         Schedule([this]() {
             AbortSpeaking(kAbortReasonNone);
-            SetListeningMode(kListeningModeManualStop);
+            ListeningMode mode = aec_mode_ == kAecOff ? 
+#if CONFIG_USE_NERTC_PTT_MODE
+            kListeningModeManualStop :
+#else
+            kListeningModeAutoStop : 
+#endif
+            kListeningModeRealtime;
+            SetListeningMode(mode);
         });
     }
 }
@@ -2027,20 +2040,24 @@ void Application::OnAlarm(int time, const std::string& name) {
     xTimerStart(alarm_play_timer_, 0);
 }
 
-void Application::SetAlarmTime(int target_time_s, const std::string& name) {
+AlarmError Application::SetAlarmTime(int target_time_s, const std::string& name) {
     ESP_LOGI(TAG, "SetAlarmTime: %d, %s", target_time_s, name.c_str());
     if (target_time_s <= 0) {
         ESP_LOGW(TAG, "SetAlarmTime: target_time_s <= 0");
-        return;
+        return ALARM_ERROR_INVALID_ALARM_TIME;
     }
     if (alarm_manager_) {
-        alarm_manager_->SetAlarm(target_time_s, name);
+        return alarm_manager_->SetAlarm(target_time_s, name);
     }
+    return ALARM_ERROR_INVALID_ALARM_MANAGER;
 }
 
 void Application::CancelAlarm() {
     ESP_LOGI(TAG, "CancelAlarm");
     Schedule([this]() {
+        if (alarm_manager_) {
+            alarm_manager_->ClearAll();
+        }
         if (!alarm_active_) {
             return;
         }
