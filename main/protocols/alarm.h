@@ -21,6 +21,13 @@ struct Alarm {
     int time;
 };
 
+enum AlarmError {
+    ALARM_ERROR_NONE = 0,
+    ALARM_ERROR_TOO_MANY_ALARMS = 1,
+    ALARM_ERROR_INVALID_ALARM_TIME = 2,
+    ALARM_ERROR_INVALID_ALARM_MANAGER = 3,
+};
+
 class AlarmManager {
 public:
     AlarmManager(){
@@ -60,15 +67,15 @@ public:
     }
 
     // 设置闹钟
-    void SetAlarm(int seconde_from_now, std::string alarm_name){
+    AlarmError SetAlarm(int seconde_from_now, std::string alarm_name){
         std::lock_guard<std::mutex> lock(mutex_);
-        if(alarms_.size() >= 10){
+        if(alarms_.size() >= 1){
             ESP_LOGE(ALARM_TAG, "Too many alarms");
-            return;
+            return ALARM_ERROR_TOO_MANY_ALARMS;
         }
         if(seconde_from_now <= 0){
             ESP_LOGE(ALARM_TAG, "Invalid alarm time");
-            return;
+            return ALARM_ERROR_INVALID_ALARM_TIME;
         }
 
         Settings settings_("alarm_clock", true); // 闹钟设置
@@ -89,6 +96,7 @@ public:
         seconde_from_now = alarm_first->time - now;
         ESP_LOGI(ALARM_TAG, "begin a alarm at %d", seconde_from_now);
         esp_timer_start_once(timer_, seconde_from_now * 1000000); // 当前一定有时钟, 所以不需要清除标志
+        return ALARM_ERROR_NONE;
     }
     // 获取闹钟列表状态
     std::string GetAlarmsStatus(){
