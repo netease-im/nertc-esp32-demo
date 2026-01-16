@@ -43,7 +43,6 @@ std::string SystemInfo::GetMacAddress() {
     return std::string(mac_str);
 }
 
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
 std::string SystemInfo::GetWifiName(const std::string& prefix) {
     // Get MAC and use it to generate a unique SSID
     uint8_t mac[6];
@@ -56,10 +55,15 @@ std::string SystemInfo::GetWifiName(const std::string& prefix) {
     snprintf(ssid, sizeof(ssid), "%s-%02X%02X", prefix.c_str(), mac[4], mac[5]);
     return std::string(ssid);
 }
-#endif
 
 std::string SystemInfo::GetChipModelName() {
     return std::string(CONFIG_IDF_TARGET);
+}
+
+std::string SystemInfo::GetUserAgent() {
+    auto app_desc = esp_app_get_description();
+    auto user_agent = std::string(BOARD_NAME "/") + app_desc->version;
+    return user_agent;
 }
 
 esp_err_t SystemInfo::PrintTaskCpuUsage(TickType_t xTicksToWait) {
@@ -148,7 +152,7 @@ exit:    //Common return path
 }
 
 void SystemInfo::PrintTaskList() {
-    char buffer[500];
+    char buffer[1000];
     vTaskList(buffer);
     ESP_LOGI(TAG, "Task list: \n%s", buffer);
 }

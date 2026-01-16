@@ -7,7 +7,7 @@
 
 #include <esp_log.h>
 #include <esp_timer.h>
-#include "font_awesome_symbols.h"
+#include <font_awesome.h>
 #include <opus_encoder.h>
 
 static const char *TAG = "Ml307Board";
@@ -35,6 +35,9 @@ void Ml307Board::StartNetwork() {
     modem_->OnNetworkStateChanged([this, &application](bool network_ready) {
         if (network_ready) {
             ESP_LOGI(TAG, "Network is ready");
+            application.Schedule([this, &application]() {
+                application.Alert(Lang::Strings::WIFI_CONFIG_MODE, "4G 连接成功", "4G", Lang::Sounds::OGG_4G_CONNECTED);
+            });
         } else {
             ESP_LOGE(TAG, "Network is down");
             auto device_state = application.GetDeviceState();
@@ -51,16 +54,14 @@ void Ml307Board::StartNetwork() {
     while (true) {
         auto result = modem_->WaitForNetworkReady();
         if (result == NetworkStatus::ErrorInsertPin) {
-            application.Alert(Lang::Strings::ERROR, Lang::Strings::PIN_ERROR, "sad", Lang::Sounds::P3_ERR_PIN);
+            application.Alert(Lang::Strings::ERROR, Lang::Strings::PIN_ERROR, "triangle_exclamation", Lang::Sounds::OGG_ERR_PIN);
         } else if (result == NetworkStatus::ErrorRegistrationDenied) {
-            application.Alert(Lang::Strings::ERROR, Lang::Strings::REG_ERROR, "sad", Lang::Sounds::P3_ERR_REG);
+            application.Alert(Lang::Strings::ERROR, Lang::Strings::REG_ERROR, "triangle_exclamation", Lang::Sounds::OGG_ERR_REG);
         } else {
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
-
-    application.PlaySound(Lang::Sounds::P3_4G_CONNECTED);
 
     // Print the ML307 modem information
     std::string module_revision = modem_->GetModuleRevision();
@@ -83,13 +84,13 @@ const char* Ml307Board::GetNetworkStateIcon() {
     if (csq == -1) {
         return FONT_AWESOME_SIGNAL_OFF;
     } else if (csq >= 0 && csq <= 14) {
-        return FONT_AWESOME_SIGNAL_1;
+        return FONT_AWESOME_SIGNAL_WEAK;
     } else if (csq >= 15 && csq <= 19) {
-        return FONT_AWESOME_SIGNAL_2;
+        return FONT_AWESOME_SIGNAL_FAIR;
     } else if (csq >= 20 && csq <= 24) {
-        return FONT_AWESOME_SIGNAL_3;
+        return FONT_AWESOME_SIGNAL_GOOD;
     } else if (csq >= 25 && csq <= 31) {
-        return FONT_AWESOME_SIGNAL_4;
+        return FONT_AWESOME_SIGNAL_STRONG;
     }
 
     ESP_LOGW(TAG, "Invalid CSQ: %d", csq);
@@ -116,7 +117,7 @@ void Ml307Board::SetPowerSaveMode(bool enabled) {
 std::string Ml307Board::GetDeviceStatusJson() {
     /*
      * 返回设备状态JSON
-     * 
+     *
      * 返回的JSON结构如下：
      * {
      *     "audio_speaker": {
@@ -156,7 +157,10 @@ std::string Ml307Board::GetDeviceStatusJson() {
     }
     auto display = board.GetDisplay();
     if (display && display->height() > 64) { // For LCD display only
-        cJSON_AddStringToObject(screen, "theme", display->GetTheme().c_str());
+        auto theme = display->GetTheme();
+        if (theme != nullptr) {
+            cJSON_AddStringToObject(screen, "theme", theme->name().c_str());
+        }
     }
     cJSON_AddItemToObject(root, "screen", screen);
 

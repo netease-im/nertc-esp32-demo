@@ -1,12 +1,12 @@
 #include "dual_network_board.h"
 #include "display/lcd_display.h"
-#include "audio_codecs/box_audio_codec.h"
+#include "audio/codecs/box_audio_codec.h"
 #include "application.h"
 #include "button.h"
 #include "led/single_led.h"
 #include "config.h"
 #include "assets/lang_config.h"
-#include "font_awesome_symbols.h"
+#include "font_awesome.h"
 #include "iot/thing_manager.h"
 
 #include <esp_lcd_panel_vendor.h>
@@ -182,6 +182,7 @@ private:
     bool mpu_init_ = false;
     // 新增：电机控制用定时器
     TimerHandle_t motor_timer_ = nullptr;
+    bool long_press_ = false;
 
     bool MpuWriteReg(uint8_t reg, uint8_t value) {
         if (!mpu_dev_) return false;
@@ -483,12 +484,10 @@ private:
             app.ToggleChatState();
         });
 #if CONFIG_USE_4G_WIFI
-        boot_button_.OnPressRepeaDone([this](uint16_t count) {
-            ESP_LOGW(TAG, "boot_button_.OnPressRepeaDone, count=%d", (int)count);
-            if (count >= 5) {
-                SwitchNetworkType();
-            }
-        });
+        boot_button_.OnMultipleClick([this]() {
+            ESP_LOGW(TAG, "boot_button_.OnMultipleClick");
+            SwitchNetworkType();
+        }, 4);
 #endif
         boot_button_.OnDoubleClick([this]() {
             ESP_LOGW(TAG, "boot_button_.OnDoubleClick");
@@ -502,19 +501,23 @@ private:
         boot_button_.OnLongPress([this]() {
             ESP_LOGI(TAG, "OnLongPress");
             Application::GetInstance().SetDeviceState(kDeviceStateListening);
+            long_press_ = true;
         });
 
-        boot_button_.OnLongPressUp([this]() {
-            ESP_LOGI(TAG, "OnLongPressUp");
-            Application::GetInstance().StopListening();
+        boot_button_.OnPressUp([this]() {
+            ESP_LOGI(TAG, "OnPressUp");
+            if (long_press_) {
+                long_press_ = false;
+                Application::GetInstance().StopListening();
+            }
         });
     }
 
     // 物联网初始化，添加对 AI 可见设备
     void InitializeIot() {
-        auto& thing_manager = iot::ThingManager::GetInstance();
-        thing_manager.AddThing(iot::CreateThing("Speaker"));
-        thing_manager.AddThing(iot::CreateThing("Screen"));
+        // auto& thing_manager = iot::ThingManager::GetInstance();
+        // thing_manager.AddThing(iot::CreateThing("Speaker"));
+        // thing_manager.AddThing(iot::CreateThing("Screen"));
     }
 
     void InitializeSpi() {
@@ -565,12 +568,7 @@ private:
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 
         display_ = new SpiLcdDisplay(panel_io, panel,
-            DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
-            {
-                .text_font = &font_puhui_16_4,
-                .icon_font = &font_awesome_16_4,
-                .emoji_font = DISPLAY_HEIGHT >= 240 ? font_emoji_64_init() : font_emoji_32_init(),
-            });
+            DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
         display_->SetEmotion("wifi");
     }
 

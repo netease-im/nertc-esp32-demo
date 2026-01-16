@@ -12,9 +12,9 @@ struct AudioStreamPacket {
     int frame_duration = 0;
     uint32_t timestamp = 0;
     std::vector<uint8_t> payload;
-#if defined(CONFIG_CONNECTION_TYPE_NERTC)
+#if CONFIG_CONNECTION_TYPE_NERTC
     bool muted = false;
-    std::vector<int16_t> pcm_payload; 
+    std::vector<int16_t> pcm_payload;
 #endif
 };
 
@@ -55,7 +55,7 @@ public:
     inline int server_frame_duration() const {
         return server_frame_duration_;
     }
-#if defined(CONFIG_CONNECTION_TYPE_NERTC)
+#if CONFIG_CONNECTION_TYPE_NERTC
     inline int samples_per_channel() const {
         return samples_per_channel_;
     }
@@ -64,39 +64,44 @@ public:
         return session_id_;
     }
 
-    void OnIncomingAudio(std::function<void(AudioStreamPacket&& packet)> callback);
+    void OnIncomingAudio(std::function<void(std::unique_ptr<AudioStreamPacket> packet)> callback);
     void OnIncomingJson(std::function<void(const cJSON* root)> callback);
     void OnAudioChannelOpened(std::function<void()> callback);
     void OnAudioChannelClosed(std::function<void()> callback);
     void OnNetworkError(std::function<void(const std::string& message)> callback);
+    void OnConnected(std::function<void()> callback);
+    void OnDisconnected(std::function<void()> callback);
 
     virtual bool Start() = 0;
     virtual bool OpenAudioChannel() = 0;
     virtual void CloseAudioChannel() = 0;
     virtual bool IsAudioChannelOpened() const = 0;
-    virtual bool SendAudio(const AudioStreamPacket& packet) = 0;
-    virtual void SendAecReferenceAudio(const AudioStreamPacket& packet) {};
+    virtual bool SendAudio(std::unique_ptr<AudioStreamPacket> packet) = 0;
+    virtual void SendAecReferenceAudio(std::unique_ptr<AudioStreamPacket> packet) {}
     virtual void SendWakeWordDetected(const std::string& wake_word);
     virtual void SendStartListening(ListeningMode mode);
     virtual void SendStopListening();
     virtual void SendAbortSpeaking(AbortReason reason);
-    virtual void SendIotDescriptors(const std::string& descriptors);
-    virtual void SendIotStates(const std::string& states);
     virtual void SendMcpMessage(const std::string& message);
-
+    virtual void SetAISleep() {}
+    virtual void SendTTSText(const std::string& text, int interrupt_mode, bool add_context) {}
     virtual void SendLlmText(const std::string& text) {}
     virtual void SendLlmImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) {}
 
+    virtual void TestDestroy() {}
+
 protected:
     std::function<void(const cJSON* root)> on_incoming_json_;
-    std::function<void(AudioStreamPacket&& packet)> on_incoming_audio_;
+    std::function<void(std::unique_ptr<AudioStreamPacket> packet)> on_incoming_audio_;
     std::function<void()> on_audio_channel_opened_;
     std::function<void()> on_audio_channel_closed_;
     std::function<void(const std::string& message)> on_network_error_;
+    std::function<void()> on_connected_;
+    std::function<void()> on_disconnected_;
 
     int server_sample_rate_ = 24000;
     int server_frame_duration_ = 60;
-#if defined(CONFIG_CONNECTION_TYPE_NERTC)
+#if CONFIG_CONNECTION_TYPE_NERTC
     int samples_per_channel_ = 480;
 #endif
     bool error_occurred_ = false;
@@ -109,4 +114,3 @@ protected:
 };
 
 #endif // PROTOCOL_H
-

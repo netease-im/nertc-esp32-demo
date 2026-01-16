@@ -9,13 +9,18 @@
 
 static const char* TAG = "AtModem";
 
-std::unique_ptr<AtModem> AtModem::Detect(gpio_num_t tx_pin, gpio_num_t rx_pin, gpio_num_t dtr_pin, int baud_rate) {
+std::unique_ptr<AtModem> AtModem::Detect(gpio_num_t tx_pin, gpio_num_t rx_pin, gpio_num_t dtr_pin, int baud_rate, int timeout_ms) {
+    // 调用带 RI pin 的版本，RI pin 默认为 GPIO_NUM_NC
+    return Detect(tx_pin, rx_pin, dtr_pin, GPIO_NUM_NC, baud_rate, timeout_ms);
+}
+
+std::unique_ptr<AtModem> AtModem::Detect(gpio_num_t tx_pin, gpio_num_t rx_pin, gpio_num_t dtr_pin, gpio_num_t ri_pin, int baud_rate, int timeout_ms) {
     // 创建AtUart进行检测
-    auto uart = std::make_shared<AtUart>(tx_pin, rx_pin, dtr_pin);
+    auto uart = std::make_shared<AtUart>(tx_pin, rx_pin, dtr_pin, ri_pin);
     uart->Initialize();
     
     // 设置波特率
-    if (!uart->SetBaudRate(baud_rate)) {
+    if (!uart->SetBaudRate(baud_rate, timeout_ms)) {
         return nullptr;
     }
     
@@ -35,6 +40,8 @@ std::unique_ptr<AtModem> AtModem::Detect(gpio_num_t tx_pin, gpio_num_t rx_pin, g
         return std::make_unique<Ec801EAtModem>(uart);
     } else if (response.find("ML307") == 0) {
         return std::make_unique<Ml307AtModem>(uart);
+    } else if (response.find("TC10E") == 0) {
+        return std::make_unique<Ec801EAtModem>(uart);
     } else {
         ESP_LOGE(TAG, "Unrecognized modem type: %s, use ML307 AtModem as default", response.c_str());
         return std::make_unique<Ml307AtModem>(uart);
@@ -126,12 +133,16 @@ std::string AtModem::GetImei() {
     if (!imei_.empty()) {
         return imei_;
     }
-    at_uart_->SendCommand("AT+CGSN=1");
+    if (!at_uart_->SendCommand("AT+CGSN=1")) {
+        ESP_LOGE(TAG, "Failed to send AT+CGSN=1 command");
+    }
     return imei_;
 }
 
 std::string AtModem::GetIccid() {
-    at_uart_->SendCommand("AT+ICCID");
+    if (!at_uart_->SendCommand("AT+ICCID")) {
+        ESP_LOGE(TAG, "Failed to send AT+ICCID command");
+    }
     return iccid_;
 }
 
@@ -141,22 +152,30 @@ std::string AtModem::GetModuleRevision() {
     }
     if (at_uart_->SendCommand("AT+CGMR")) {
         module_revision_ = at_uart_->GetResponse();
+    } else {
+        ESP_LOGE(TAG, "Failed to send AT+CGMR command");
     }
     return module_revision_;
 }
 
 std::string AtModem::GetCarrierName() {
-    at_uart_->SendCommand("AT+COPS?");
+    if (!at_uart_->SendCommand("AT+COPS?")) {
+        ESP_LOGE(TAG, "Failed to send AT+COPS? command");
+    }
     return carrier_name_;
 }
 
 int AtModem::GetCsq() {
-    at_uart_->SendCommand("AT+CSQ", 10);
+    if (!at_uart_->SendCommand("AT+CSQ", 100)) {
+        ESP_LOGE(TAG, "Failed to send AT+CSQ command");
+    }
     return csq_;
 }
 
 CeregState AtModem::GetRegistrationState() {
-    at_uart_->SendCommand("AT+CEREG?");
+    if (!at_uart_->SendCommand("AT+CEREG?")) {
+        ESP_LOGE(TAG, "Failed to send AT+CEREG? command");
+    }
     return cereg_state_;
 }
 

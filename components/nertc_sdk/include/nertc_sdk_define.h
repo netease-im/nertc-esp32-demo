@@ -11,7 +11,7 @@ extern "C" {
 
 /** token 最大长度 */
 #define kNERtcMaxTokenLength 256
-#define kNERtcImageLlmMaxFragmentLen 256
+#define kNERtcImageLlmMaxFragmentLen 1024
 
 typedef enum {
   NERTC_SDK_DEVICE_LEVEL_NORMAL = 0,
@@ -182,6 +182,11 @@ typedef struct nertc_sdk_audio_encoded_frame {
   /** 编码时间，单位为样本数，如0、960、1920...递增 */
   uint32_t encoded_timestamp;
 } nertc_sdk_audio_encoded_frame_t;
+
+typedef struct nertc_sdk_start_ai_config {
+  const char* start_topic;
+  size_t start_topic_len;
+} nertc_sdk_start_ai_config_t;
 
 typedef struct nertc_sdk_asr_caption_config {
   /** 字幕的源语言，默认为AUTO */
