@@ -3,7 +3,6 @@
 #include "display.h"
 #include "application.h"
 #include "system_info.h"
-#include "font_awesome_symbols.h"
 #include "settings.h"
 #include "assets/lang_config.h"
 
@@ -11,17 +10,18 @@
 #include <freertos/task.h>
 #include <esp_network.h>
 #include <esp_log.h>
-#include <esp_ota_ops.h>
-#include <esp_partition.h>
 
+#include <font_awesome.h>
 #include <wifi_station.h>
 #include <wifi_configuration_ap.h>
 #include <ssid_manager.h>
-
+#include "afsk_demod.h"
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#include "assets.h"
 #ifdef CONFIG_CONNECTION_TYPE_NERTC
     #include "nertc_protocol.h"
 #endif
-
 static const char *TAG = "WifiBoard";
 
 WifiBoard::WifiBoard() {
@@ -38,44 +38,52 @@ std::string WifiBoard::GetBoardType() {
 }
 
 void WifiBoard::EnterWifiConfigMode() {
+#ifdef CONFIG_CONNECTION_TYPE_NERTC
+#if CONFIG_IDF_TARGET_ESP32S3
     if (NeRtcProtocol::MountFileSystem()) {
         auto* config_json = NeRtcProtocol::ReadConfigJson();
         if(config_json) {
             cJSON* blufi_wifi = cJSON_GetObjectItem(config_json, "blufi_wifi");
             if (blufi_wifi && cJSON_IsBool(blufi_wifi) && blufi_wifi->valueint) {
                 ResetWifiConfigurationWithBlufi(); //蓝牙配网
-                return;
             }
         }
     }
-
+#endif
+#endif
     auto& application = Application::GetInstance();
     application.SetDeviceState(kDeviceStateWifiConfiguring);
 
     auto& wifi_ap = WifiConfigurationAp::GetInstance();
     wifi_ap.SetLanguage(Lang::CODE);
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-    wifi_ap.SetSsidPrefix(NERTC_BOARD_NAME);
-#else
     wifi_ap.SetSsidPrefix("Xiaozhi");
-#endif
     wifi_ap.Start();
 
-    // 显示 WiFi 配置 AP 的 SSID 和 Web 服务器 URL
+    // Wait 1.5 seconds to display board information
+    vTaskDelay(pdMS_TO_TICKS(1500));
+
+    // Display WiFi configuration AP SSID and web server URL
     std::string hint = Lang::Strings::CONNECT_TO_HOTSPOT;
     hint += wifi_ap.GetSsid();
     hint += Lang::Strings::ACCESS_VIA_BROWSER;
     hint += wifi_ap.GetWebServerUrl();
-    hint += "\n\n";
-    
-    // 播报配置 WiFi 的提示
-    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "wifi", Lang::Sounds::P3_WIFICONFIG);
-    
+
+    // Announce WiFi configuration prompt
+    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "gear", Lang::Sounds::OGG_WIFICONFIG);
+
+    #if CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING
+    auto display = Board::GetInstance().GetDisplay();
+    auto codec = Board::GetInstance().GetAudioCodec();
+    int channel = 1;
+    if (codec) {
+        channel = codec->input_channels();
+    }
+    ESP_LOGI(TAG, "Start receiving WiFi credentials from audio, input channels: %d", channel);
+    audio_wifi_config::ReceiveWifiCredentialsFromAudio(&application, &wifi_ap, display, channel);
+    #endif
+
     // Wait forever until reset after configuration
     while (true) {
-        int free_sram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-        int min_free_sram = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
-        ESP_LOGI(TAG, "Free internal: %u minimal internal: %u", free_sram, min_free_sram);
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
@@ -109,9 +117,6 @@ void WifiBoard::StartNetwork() {
         display->ShowNotification(notification.c_str(), 30000);
     });
     wifi_station.OnConnected([this](const std::string& ssid) {
-        auto& application = Application::GetInstance();
-        application.PlaySound(Lang::Sounds::P3_CONNECTED);
-
         auto display = Board::GetInstance().GetDisplay();
         std::string notification = Lang::Strings::CONNECTED_TO;
         notification += ssid;
@@ -126,8 +131,6 @@ void WifiBoard::StartNetwork() {
         EnterWifiConfigMode();
         return;
     }
-
-    ESP_LOGI(TAG, "wifi start network success, ip address: %s", wifi_station.GetIpAddress().c_str());
 }
 
 NetworkInterface* WifiBoard::GetNetwork() {
@@ -141,7 +144,7 @@ const char* WifiBoard::GetNetworkStateIcon() {
     }
     auto& wifi_station = WifiStation::GetInstance();
     if (!wifi_station.IsConnected()) {
-        return FONT_AWESOME_WIFI_OFF;
+        return FONT_AWESOME_WIFI_SLASH;
     }
     int8_t rssi = wifi_station.GetRssi();
     if (rssi >= -60) {
@@ -156,15 +159,17 @@ const char* WifiBoard::GetNetworkStateIcon() {
 std::string WifiBoard::GetBoardJson() {
     // Set the board type for OTA
     auto& wifi_station = WifiStation::GetInstance();
-    std::string board_json = std::string("{\"type\":\"" BOARD_TYPE "\",");
-    board_json += "\"name\":\"" BOARD_NAME "\",";
+    std::string board_json = R"({)";
+    board_json += R"("type":")" + std::string(BOARD_TYPE) + R"(",)";
+    board_json += R"("name":")" + std::string(BOARD_NAME) + R"(",)";
     if (!wifi_config_mode_) {
-        board_json += "\"ssid\":\"" + wifi_station.GetSsid() + "\",";
-        board_json += "\"rssi\":" + std::to_string(wifi_station.GetRssi()) + ",";
-        board_json += "\"channel\":" + std::to_string(wifi_station.GetChannel()) + ",";
-        board_json += "\"ip\":\"" + wifi_station.GetIpAddress() + "\",";
+        board_json += R"("ssid":")" + wifi_station.GetSsid() + R"(",)";
+        board_json += R"("rssi":)" + std::to_string(wifi_station.GetRssi()) + R"(,)";
+        board_json += R"("channel":)" + std::to_string(wifi_station.GetChannel()) + R"(,)";
+        board_json += R"("ip":")" + wifi_station.GetIpAddress() + R"(",)";
     }
-    board_json += "\"mac\":\"" + SystemInfo::GetMacAddress() + "\"}";
+    board_json += R"("mac":")" + SystemInfo::GetMacAddress() + R"(")";
+    board_json += R"(})";
     return board_json;
 }
 
@@ -185,40 +190,11 @@ void WifiBoard::ResetWifiConfiguration() {
     esp_restart();
 }
 
-void WifiBoard::ResetWifiConfigurationWithBlufi() {
-    // Set a flag and reboot the device to enter the wifi blufi mode
-    // {
-    //     Settings settings("wifi", true);
-    //     settings.SetInt("force_blufi", 1);
-    // }
-    GetDisplay()->ShowNotification(Lang::Strings::ENTERING_WIFI_CONFIG_MODE);
-
-    // 播报配置 WiFi 的提示
-    std::string hint = "进入蓝牙配网模式";
-    hint += "\n\n";
-    auto& application = Application::GetInstance();
-    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "wifi", Lang::Sounds::P3_BLUFI);
-
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    const esp_partition_t *blufi_partition = esp_partition_find_first(
-        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_2, "blufi");
-    
-    if (blufi_partition != NULL) {
-        esp_ota_set_boot_partition(blufi_partition);
-        ESP_LOGI(TAG, "Switched to blufi partition, restarting...\n");
-        vTaskDelay(pdMS_TO_TICKS(300));
-        esp_restart();
-    } else {
-        ESP_LOGI(TAG, "Blufi partition not found!\n");
-    }
-}
-
 std::string WifiBoard::GetDeviceStatusJson() {
     /*
-     * 返回设备状态JSON
-     * 
-     * 返回的JSON结构如下：
+     * Return device status JSON
+     *
+     * The returned JSON structure is as follows:
      * {
      *     "audio_speaker": {
      *         "volume": 70
@@ -260,7 +236,10 @@ std::string WifiBoard::GetDeviceStatusJson() {
     }
     auto display = board.GetDisplay();
     if (display && display->height() > 64) { // For LCD display only
-        cJSON_AddStringToObject(screen, "theme", display->GetTheme().c_str());
+        auto theme = display->GetTheme();
+        if (theme != nullptr) {
+            cJSON_AddStringToObject(screen, "theme", theme->name().c_str());
+        }
     }
     cJSON_AddItemToObject(root, "screen", screen);
 
@@ -315,4 +294,63 @@ std::string WifiBoard::GetBoardName() {
     ESP_LOGI(TAG, "GetBoardName name=%s", name.c_str());
 
     return name;
+}
+
+void WifiBoard::ResetWifiConfigurationWithBlufi() {
+    // Set a flag and reboot the device to enter the wifi blufi mode
+    // {
+    //     Settings settings("wifi", true);
+    //     settings.SetInt("force_blufi", 1);
+    // }
+    GetDisplay()->ShowNotification(Lang::Strings::ENTERING_WIFI_CONFIG_MODE);
+
+    // 播报配置 WiFi 的提示
+    std::string hint = "进入蓝牙配网模式";
+    hint += "\n\n";
+    auto& application = Application::GetInstance();
+    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "wifi", Lang::Sounds::OGG_BLUFI);
+
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    const esp_partition_t *blufi_partition = esp_ota_get_next_update_partition(NULL);
+    
+    if (blufi_partition != NULL) {
+        esp_ota_handle_t update_handle = 0;
+        auto& assets = Assets::GetInstance();
+        const std::string blufi_bin = "blufi_app.bin";
+        void* file_ptr = nullptr;
+        size_t size = 0;
+        if(assets.GetAssetData(blufi_bin, file_ptr, size))
+        {
+            if (esp_ota_begin(blufi_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle)) {
+                esp_ota_abort(update_handle);
+                ESP_LOGE(TAG, "Failed to begin blufi_partition OTA");
+                return;
+            }
+            auto err = esp_ota_write(update_handle, (char*)file_ptr, size);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to write blufi_partition OTA data: %s", esp_err_to_name(err));
+                esp_ota_abort(update_handle);
+                return;
+            }
+            err = esp_ota_end(update_handle);
+            if (err != ESP_OK) {
+                if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
+                    ESP_LOGE(TAG, "Image validation failed, image is corrupted");
+                } else {
+                    ESP_LOGE(TAG, "Failed to end OTA: %s", esp_err_to_name(err));
+                }
+                return;
+            }
+            esp_ota_set_boot_partition(blufi_partition);
+            ESP_LOGI(TAG, "Switched to blufi partition, restarting...\n");
+            vTaskDelay(pdMS_TO_TICKS(300));
+            esp_restart();
+        }
+        else{
+            ESP_LOGE(TAG, "assets can not find blufi bin!!");
+        }
+    } else {
+        ESP_LOGI(TAG, "Blufi[OTA] partition not found!\n");
+    }
 }

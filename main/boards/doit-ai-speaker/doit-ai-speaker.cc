@@ -1,6 +1,5 @@
 #include "wifi_board.h"
-#include "audio_codecs/jy6311_audio_codec.h"
-#include "audio_codecs/es8311_audio_codec.h"
+#include "audio/codecs/es8311_audio_codec.h"
 #include "display/lcd_display.h"
 #include "application.h"
 #include "button.h"
@@ -51,23 +50,15 @@ private:
             }
             app.ToggleChatState();
         });
-        boot_button_.OnPressRepeaDone([this](uint16_t count) {
-            if(count >= 3){
-                auto& app = Application::GetInstance();
-                if (app.GetDeviceState() == kDeviceStateWifiConfiguring) {
-                    this->ResetWifiConfigurationWithBlufi();
-                } else {
-                    ResetWifiConfiguration();
-                }
-            }
-        });
     }
 
     // 物联网初始化，添加对 AI 可见设备
     void InitializeIot() {
+#if CONFIG_IOT_PROTOCOL_XIAOZHI
         auto& thing_manager = iot::ThingManager::GetInstance();
         thing_manager.AddThing(iot::CreateThing("Speaker"));
         thing_manager.AddThing(iot::CreateThing("Screen"));
+#endif
     }
 
     void InitializeSpi() {
@@ -111,12 +102,7 @@ private:
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         display = new SpiLcdDisplay(panel_io, panel, 
-                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
-                                    {
-                                        .text_font = &font_puhui_16_4,
-                                        .icon_font = &font_awesome_16_4,
-                                        .emoji_font = font_emoji_64_init(),
-                                    });
+                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
 public:
@@ -130,7 +116,6 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-    #if CONFIG_CODEC_ES8388_SUPPORT
         static Es8311AudioCodec audio_codec(
             codec_i2c_bus_, 
             I2C_NUM_0, 
@@ -143,20 +128,6 @@ public:
             AUDIO_I2S_GPIO_DIN,
             AUDIO_CODEC_PA_PIN, 
             AUDIO_CODEC_ES8311_ADDR);
-    #else
-        static Jy6311AudioCodec audio_codec(
-            codec_i2c_bus_,
-            I2C_NUM_0,
-            AUDIO_INPUT_SAMPLE_RATE,
-            AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_MCLK,
-            AUDIO_I2S_GPIO_BCLK,
-            AUDIO_I2S_GPIO_WS,
-            AUDIO_I2S_GPIO_DOUT,
-            AUDIO_I2S_GPIO_DIN,
-            AUDIO_CODEC_PA_PIN,
-            AUDIO_CODEC_JY6311_ADDR);
-    #endif
         return &audio_codec;
     }
 

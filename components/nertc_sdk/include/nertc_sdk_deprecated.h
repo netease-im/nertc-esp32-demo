@@ -51,6 +51,15 @@ NERTC_SDK_DEPRECATED_API nertc_sdk_engine_t nertc_create_engine(const nertc_sdk_
 NERTC_SDK_DEPRECATED_API int nertc_init(nertc_sdk_engine_t engine);
 
 /**
+ * @brief 开始AI服务（已废弃，请使用 nertc_start_ai_with_config 接口）
+ * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
+ * @return 方法调用结果：<br>
+ *         -   0：成功 <br>
+ *         - 非0：失败 <br>
+ */
+NERTC_SDK_DEPRECATED_API int nertc_start_ai(nertc_sdk_engine_t engine);
+
+/**
  * @brief 挂断电话 （已废弃，请使用 nertc_ai_manual_interrupt 接口）
  * @param engine 通过 nertc_create_engine 创建且通过 nertc_init 初始化之后的引擎实例
  * @return 方法调用结果：<br>

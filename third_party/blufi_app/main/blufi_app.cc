@@ -62,12 +62,9 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "BLUFI WiFi connected! SSID: %s", wifi_cred.ssid);
         SsidManager::GetInstance().AddSsid(wifi_cred.ssid, wifi_cred.password); //存储账号密码
 
-        /* 设置下一次启动分区为 ota_0（主工程的应用在ota_0） */
-        const esp_partition_t *ota0 = esp_partition_find_first(
-                ESP_PARTITION_TYPE_APP,
-                ESP_PARTITION_SUBTYPE_APP_OTA_0,
-                NULL);
-        ESP_ERROR_CHECK( esp_ota_set_boot_partition(ota0) ); 
+        /* 设置下一次启动分区 */
+        const esp_partition_t *next_ota = esp_ota_get_next_update_partition(NULL);
+        ESP_ERROR_CHECK( esp_ota_set_boot_partition(next_ota) ); 
     } else {
         ESP_LOGE(TAG, "BLUFI WiFi connection failed");
     }

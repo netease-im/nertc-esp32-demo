@@ -5,6 +5,7 @@
 #include <at_modem.h>
 #include "board.h"
 
+
 class Ml307Board : public Board {
 protected:
     std::unique_ptr<AtModem> modem_;

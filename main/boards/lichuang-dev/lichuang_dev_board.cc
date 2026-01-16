@@ -1,12 +1,16 @@
 #include "wifi_board.h"
-#include "audio_codecs/box_audio_codec.h"
+#include "codecs/box_audio_codec.h"
 #include "display/lcd_display.h"
+#include "display/emote_display.h"
 #include "application.h"
 #include "button.h"
 #include "config.h"
 #include "i2c_device.h"
-#include "iot/thing_manager.h"
+#if 1
+#include "esp32_camera_legacy.h"
+#else
 #include "esp32_camera.h"
+#endif
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
@@ -17,11 +21,7 @@
 #include <esp_lvgl_port.h>
 #include <lvgl.h>
 
-
 #define TAG "LichuangDevBoard"
-
-LV_FONT_DECLARE(font_puhui_20_4);
-LV_FONT_DECLARE(font_awesome_20_4);
 
 class Pca9557 : public I2cDevice {
 public:
@@ -42,18 +42,18 @@ private:
     Pca9557* pca9557_;
 
 public:
-    CustomAudioCodec(i2c_master_bus_handle_t i2c_bus, Pca9557* pca9557) 
-        : BoxAudioCodec(i2c_bus, 
-                       AUDIO_INPUT_SAMPLE_RATE, 
+    CustomAudioCodec(i2c_master_bus_handle_t i2c_bus, Pca9557* pca9557)
+        : BoxAudioCodec(i2c_bus,
+                       AUDIO_INPUT_SAMPLE_RATE,
                        AUDIO_OUTPUT_SAMPLE_RATE,
-                       AUDIO_I2S_GPIO_MCLK, 
-                       AUDIO_I2S_GPIO_BCLK, 
-                       AUDIO_I2S_GPIO_WS, 
-                       AUDIO_I2S_GPIO_DOUT, 
+                       AUDIO_I2S_GPIO_MCLK,
+                       AUDIO_I2S_GPIO_BCLK,
+                       AUDIO_I2S_GPIO_WS,
+                       AUDIO_I2S_GPIO_DOUT,
                        AUDIO_I2S_GPIO_DIN,
-                       GPIO_NUM_NC, 
-                       AUDIO_CODEC_ES8311_ADDR, 
-                       AUDIO_CODEC_ES7210_ADDR, 
+                       GPIO_NUM_NC,
+                       AUDIO_CODEC_ES8311_ADDR,
+                       AUDIO_CODEC_ES7210_ADDR,
                        AUDIO_INPUT_REFERENCE),
           pca9557_(pca9557) {
     }
@@ -73,9 +73,13 @@ private:
     i2c_master_bus_handle_t i2c_bus_;
     i2c_master_dev_handle_t pca9557_handle_;
     Button boot_button_;
-    LcdDisplay* display_;
+    Display* display_;
     Pca9557* pca9557_;
+#if 1
+    Esp32CameraLegacy* camera_;
+#else
     Esp32Camera* camera_;
+#endif
 
     void InitializeI2c() {
         // Initialize I2C peripheral
@@ -122,9 +126,15 @@ private:
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateIdle) {
                 app.SetAecMode(app.GetAecMode() == kAecOff ? kAecOnDeviceSide : kAecOff);
-            } 
+            }
         });
 #endif
+
+        boot_button_.OnMultipleClick([this]() {
+            auto& app = Application::GetInstance();
+            std::string request = "这是什么？";
+            app.PhotoExplain(request, "", false);
+        });
     }
 
     void InitializeSt7789Display() {
@@ -149,7 +159,7 @@ private:
         panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
         panel_config.bits_per_pixel = 16;
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io, &panel_config, &panel));
-        
+
         esp_lcd_panel_reset(panel);
         pca9557_->SetOutputState(0, 0);
 
@@ -157,27 +167,24 @@ private:
         esp_lcd_panel_invert_color(panel, true);
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
-        display_ = new SpiLcdDisplay(panel_io, panel,
-                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
-                                    {
-                                        .text_font = &font_puhui_20_4,
-                                        .icon_font = &font_awesome_20_4,
-#if CONFIG_USE_WECHAT_MESSAGE_STYLE
-                                        .emoji_font = font_emoji_32_init(),
+        esp_lcd_panel_disp_on_off(panel, true);
+
+#if CONFIG_USE_EMOTE_MESSAGE_STYLE
+        display_ = new emote::EmoteDisplay(panel, panel_io, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #else
-                                        .emoji_font = font_emoji_64_init(),
+        display_ = new SpiLcdDisplay(panel_io, panel,
+            DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
 #endif
-                                    });
     }
 
     void InitializeTouch()
     {
         esp_lcd_touch_handle_t tp;
         esp_lcd_touch_config_t tp_cfg = {
-            .x_max = DISPLAY_WIDTH,
-            .y_max = DISPLAY_HEIGHT,
+            .x_max = DISPLAY_HEIGHT,
+            .y_max = DISPLAY_WIDTH,
             .rst_gpio_num = GPIO_NUM_NC, // Shared with LCD reset
-            .int_gpio_num = GPIO_NUM_NC, 
+            .int_gpio_num = GPIO_NUM_NC,
             .levels = {
                 .reset = 0,
                 .interrupt = 0,
@@ -198,13 +205,18 @@ private:
 
         /* Add touch input (for selected screen) */
         const lvgl_port_touch_cfg_t touch_cfg = {
-            .disp = lv_display_get_default(), 
+            .disp = lv_display_get_default(),
             .handle = tp,
         };
 
-        lvgl_port_add_touch(&touch_cfg);
+        if(touch_cfg.disp) {
+            lvgl_port_add_touch(&touch_cfg);
+        } else {
+            ESP_LOGE(TAG, "Touch display is not initialized");
+        }
     }
 
+#if 1
     void InitializeCamera() {
         // Open camera power
         pca9557_->SetOutputState(2, 0);
@@ -237,8 +249,52 @@ private:
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
 
-        camera_ = new Esp32Camera(config);
+        camera_ = new Esp32CameraLegacy(config);
     }
+#else
+    void InitializeCamera() {
+        // Open camera power
+        pca9557_->SetOutputState(2, 0);
+
+        static esp_cam_ctlr_dvp_pin_config_t dvp_pin_config = {
+            .data_width = CAM_CTLR_DATA_WIDTH_8,
+            .data_io = {
+                [0] = CAMERA_PIN_D0,
+                [1] = CAMERA_PIN_D1,
+                [2] = CAMERA_PIN_D2,
+                [3] = CAMERA_PIN_D3,
+                [4] = CAMERA_PIN_D4,
+                [5] = CAMERA_PIN_D5,
+                [6] = CAMERA_PIN_D6,
+                [7] = CAMERA_PIN_D7,
+            },
+            .vsync_io = CAMERA_PIN_VSYNC,
+            .de_io = CAMERA_PIN_HREF,
+            .pclk_io = CAMERA_PIN_PCLK,
+            .xclk_io = CAMERA_PIN_XCLK,
+        };
+
+        esp_video_init_sccb_config_t sccb_config = {
+            .init_sccb = false,
+            .i2c_handle = i2c_bus_,
+            .freq = 100000,
+        };
+
+        esp_video_init_dvp_config_t dvp_config = {
+            .sccb_config = sccb_config,
+            .reset_pin = CAMERA_PIN_RESET,
+            .pwdn_pin = CAMERA_PIN_PWDN,
+            .dvp_pin = dvp_pin_config,
+            .xclk_freq = XCLK_FREQ_HZ,
+        };
+
+        esp_video_init_config_t video_config = {
+            .dvp = &dvp_config,
+        };
+
+        camera_ = new Esp32Camera(video_config);
+    }
+#endif
 
 public:
     LichuangDevBoard() : boot_button_(BOOT_BUTTON_GPIO) {
@@ -249,18 +305,12 @@ public:
         InitializeButtons();
         InitializeCamera();
 
-#if CONFIG_IOT_PROTOCOL_XIAOZHI
-        auto& thing_manager = iot::ThingManager::GetInstance();
-        thing_manager.AddThing(iot::CreateThing("Speaker"));
-        thing_manager.AddThing(iot::CreateThing("Screen"));
-#endif
         GetBacklight()->RestoreBrightness();
-        GetAudioCodec()->SetOutputVolume(100);
     }
 
     virtual AudioCodec* GetAudioCodec() override {
         static CustomAudioCodec audio_codec(
-            i2c_bus_, 
+            i2c_bus_,
             pca9557_);
         return &audio_codec;
     }
@@ -268,7 +318,7 @@ public:
     virtual Display* GetDisplay() override {
         return display_;
     }
-    
+
     virtual Backlight* GetBacklight() override {
         static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
         return &backlight;

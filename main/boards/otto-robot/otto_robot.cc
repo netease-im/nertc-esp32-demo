@@ -7,11 +7,10 @@
 #include <wifi_station.h>
 
 #include "application.h"
-#include "audio_codecs/no_audio_codec.h"
+#include "codecs/no_audio_codec.h"
 #include "button.h"
 #include "config.h"
 #include "display/lcd_display.h"
-#include "iot/thing_manager.h"
 #include "lamp_controller.h"
 #include "led/single_led.h"
 #include "mcp_server.h"
@@ -19,11 +18,9 @@
 #include "power_manager.h"
 #include "system_reset.h"
 #include "wifi_board.h"
+#include "websocket_control_server.h"
 
 #define TAG "OttoRobot"
-
-LV_FONT_DECLARE(font_puhui_16_4);
-LV_FONT_DECLARE(font_awesome_16_4);
 
 extern void InitializeOttoController();
 
@@ -32,6 +29,7 @@ private:
     LcdDisplay* display_;
     PowerManager* power_manager_;
     Button boot_button_;
+    WebSocketControlServer* ws_control_server_;
     void InitializePowerManager() {
         power_manager_ =
             new PowerManager(POWER_CHARGE_DETECT_PIN, POWER_ADC_UNIT, POWER_ADC_CHANNEL);
@@ -79,12 +77,7 @@ private:
 
         display_ = new OttoEmojiDisplay(
             panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y,
-            DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
-            {
-                .text_font = &font_puhui_16_4,
-                .icon_font = &font_awesome_16_4,
-                .emoji_font = DISPLAY_HEIGHT >= 240 ? font_emoji_64_init() : font_emoji_32_init(),
-            });
+            DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
     void InitializeButtons() {
@@ -103,6 +96,25 @@ private:
         ::InitializeOttoController();
     }
 
+    void InitializeWebSocketControlServer() {
+        ESP_LOGI(TAG, "初始化WebSocket控制服务器");
+        ws_control_server_ = new WebSocketControlServer();
+        if (!ws_control_server_->Start(8080)) {
+            ESP_LOGE(TAG, "Failed to start WebSocket control server");
+            delete ws_control_server_;
+            ws_control_server_ = nullptr;
+        } else {
+            ESP_LOGI(TAG, "WebSocket control server started on port 8080");
+        }
+    }
+
+    void StartNetwork() override {
+        WifiBoard::StartNetwork();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        InitializeWebSocketControlServer();
+    }
+
 public:
     OttoRobot() : boot_button_(BOOT_BUTTON_GPIO) {
         InitializeSpi();
@@ -110,6 +122,7 @@ public:
         InitializeButtons();
         InitializePowerManager();
         InitializeOttoController();
+        ws_control_server_ = nullptr;
         GetBacklight()->RestoreBrightness();
     }
 

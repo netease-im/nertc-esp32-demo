@@ -9,5 +9,7 @@ set(PROJECT_VER "1.2.2")
 # Add this line to disable the specific warning
 add_compile_options(-Wno-missing-field-initializers)
 
+add_compile_options(-Wno-error=format= -Wno-format)
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(xiaozhi)

@@ -12,10 +12,9 @@ public:
     static size_t GetMinimumFreeHeapSize();
     static size_t GetFreeHeapSize();
     static std::string GetMacAddress();
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
     static std::string GetWifiName(const std::string& prefix);
-#endif
     static std::string GetChipModelName();
+    static std::string GetUserAgent();
     static esp_err_t PrintTaskCpuUsage(TickType_t xTicksToWait);
     static void PrintTaskList();
     static std::string PrintHeapStats();

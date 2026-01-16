@@ -58,6 +58,7 @@ typedef struct nertc_wakeup_sdk_config {
   const char* appkey;
   const char* deviceId;
   const char* custom_config;
+  void* models_list;
   nertc_wakeup_sdk_ext_http_io_t *http_io; //外部http io接口, 4G板子使用
 } nertc_wakeup_sdk_config_t;
 

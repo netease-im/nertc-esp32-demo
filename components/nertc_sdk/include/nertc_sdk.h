@@ -142,7 +142,7 @@ NERTC_SDK_API int nertc_stop_asr_caption(nertc_sdk_engine_t engine);
  *         -   0：成功 <br>
  *         - 非0：失败 <br>
  */
-NERTC_SDK_API int nertc_start_ai(nertc_sdk_engine_t engine);
+NERTC_SDK_API int nertc_start_ai_with_config(nertc_sdk_engine_t engine, nertc_sdk_start_ai_config_t* config);
 
 /**
  * @brief 停止AI服务
@@ -254,6 +254,8 @@ NERTC_SDK_API void nertc_sdk_recommended_configuration_init(nertc_sdk_recommende
 NERTC_SDK_API void nertc_sdk_audio_frame_init(nertc_sdk_audio_frame_t* frame);
 
 NERTC_SDK_API void nertc_sdk_audio_encoded_frame_init(nertc_sdk_audio_encoded_frame_t* frame);
+
+NERTC_SDK_API void nertc_sdk_start_ai_config_init(nertc_sdk_start_ai_config_t* cfg);
 
 NERTC_SDK_API void nertc_sdk_asr_caption_config_init(nertc_sdk_asr_caption_config_t* cfg);
 

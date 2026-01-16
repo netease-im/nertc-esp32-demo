@@ -11,19 +11,15 @@
 class Button {
 public:
     Button(button_handle_t button_handle);
-    Button(gpio_num_t gpio_num, bool active_high = false, uint16_t long_press_time = 0, uint16_t short_press_time = 0);
+    Button(gpio_num_t gpio_num, bool active_high = false, uint16_t long_press_time = 0, uint16_t short_press_time = 0, bool enable_power_save = false);
     ~Button();
 
     void OnPressDown(std::function<void()> callback);
     void OnPressUp(std::function<void()> callback);
     void OnLongPress(std::function<void()> callback);
-    void OnLongPressHold(std::function<void()> callback);
-    void OnLongPressUp(std::function<void()> callback);
     void OnClick(std::function<void()> callback);
     void OnDoubleClick(std::function<void()> callback);
     void OnMultipleClick(std::function<void()> callback, uint8_t click_count = 3);
-    void OnPressRepeat(std::function<void(uint16_t)> callback);
-    void OnPressRepeaDone(std::function<void(uint16_t)> callback);
 
 protected:
     gpio_num_t gpio_num_;
@@ -32,13 +28,9 @@ protected:
     std::function<void()> on_press_down_;
     std::function<void()> on_press_up_;
     std::function<void()> on_long_press_;
-    std::function<void()> on_long_press_hold_;
-    std::function<void()> on_long_press_up_;
     std::function<void()> on_click_;
     std::function<void()> on_double_click_;
     std::function<void()> on_multiple_click_;
-    std::function<void(uint16_t)> on_press_repeat_done_;
-    std::function<void(uint16_t)> on_press_repeat_;
 };
 
 #if CONFIG_SOC_ADC_SUPPORTED
@@ -47,5 +39,11 @@ public:
     AdcButton(const button_adc_config_t& adc_config);
 };
 #endif
+
+class PowerSaveButton : public Button {
+public:
+    PowerSaveButton(gpio_num_t gpio_num) : Button(gpio_num, false, 0, 0, true) {
+    }
+};
 
 #endif // BUTTON_H_
