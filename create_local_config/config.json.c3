@@ -5,5 +5,5 @@
 	"license_config": {
 		"license": ""
 	},
-	"appkey":""
+	"appkey":"xxxxxxxxx"
 }

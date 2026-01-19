@@ -5,6 +5,6 @@
 	"license_config": {
 		"license": ""
 	},
-	"appkey":"",
+	"appkey":"xxxxxxxx",
 	"blufi_wifi" : true
 }
