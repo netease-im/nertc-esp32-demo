@@ -5,7 +5,8 @@ import csv
 import sys
 
 # 默认分区表路径
-DEFAULT_PARTITION_TABLE = "partitions/v1/16m.csv"
+DEFAULT_PARTITION_TABLE = "partitions/v2/16m.csv"
+DEFAULT_C3_PARTITION_TABLE = "partitions/v2/16m_c3.csv"
 DEFAULT_TARGET = "esp32-s3"  # 默认芯片类型
 
 def parse_partition_table(partition_table_path):
@@ -76,11 +77,14 @@ def main():
     parser.add_argument("--blufi", action="store_true", help="Flash the blufi firmware for Bluetooth provisioning.")
     args = parser.parse_args()
 
+    # 根据target选择分区表文件
+    partition_table_path = DEFAULT_C3_PARTITION_TABLE if args.target == "esp32-c3" else DEFAULT_PARTITION_TABLE
+
     # 如果没有指定 --size 或 --write-at，从分区表中解析
     size = args.size
     write_at = args.write_at
     if not size or not write_at:
-        offset, partition_size = parse_partition_table(DEFAULT_PARTITION_TABLE)
+        offset, partition_size = parse_partition_table(partition_table_path)
         if not size:
             size = hex(partition_size)
         if not write_at:
@@ -89,17 +93,16 @@ def main():
     # 执行 --build
     if args.build:
         if not args.input:
-            # 如果没有指定输入目录，芯片类型为 esp32s3, 则使用 create_local_config/config.json.s3 复制到 local_config/config.json
+            # 如果没有指定输入目录，根据芯片类型复制对应的配置文件
+            if not os.path.exists("local_config"):
+                os.makedirs("local_config")
+
             if args.target == "esp32-s3":
-                if not os.path.exists("local_config"):
-                    os.makedirs("local_config")
                 shutil.copy("create_local_config/config.json.s3", "local_config/config.json")
-                args.input = "local_config"
-            else:#如果没有指定输入目录，芯片类型为 esp32s3, 则使用 create_local_config/config.json.c3 复制到 local_config/config.json
-                if not os.path.exists("local_config"):
-                    os.makedirs("local_config")
+            else:  # esp32-c3 or other targets
                 shutil.copy("create_local_config/config.json.c3", "local_config/config.json")
-                args.input = "local_config"     
+
+            args.input = "local_config"
         build_bin(size, args.output, args.input, args.target)
 
     # 执行 --flash
@@ -108,7 +111,7 @@ def main():
             print("Error: --flash requires -p/--port to specify the serial port.")
             sys.exit(1)
         flash_bin(args.port, write_at, args.output, args.target)
-    
+
     # 执行 --blufi
     if args.blufi:
         if not args.port:
@@ -119,9 +122,9 @@ def main():
 if __name__ == "__main__":
     main()
     command = f"git checkout local_config/config.json"
-    print(f"Running build command for {command}")
+    print(f"Running git checkout command: {command}")
     try:
         subprocess.run(command, shell=True, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to build bin file. {e}")
+        print(f"Error: Failed to checkout config file. {e}")
         sys.exit(1)

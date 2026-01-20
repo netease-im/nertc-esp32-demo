@@ -18,7 +18,7 @@ AdcButton::AdcButton(const button_adc_config_t& adc_config) : Button(nullptr) {
 Button::Button(button_handle_t button_handle) : button_handle_(button_handle) {
 }
 
-Button::Button(gpio_num_t gpio_num, bool active_high, uint16_t long_press_time, uint16_t short_press_time) : gpio_num_(gpio_num) {
+Button::Button(gpio_num_t gpio_num, bool active_high, uint16_t long_press_time, uint16_t short_press_time, bool enable_power_save) : gpio_num_(gpio_num) {
     if (gpio_num == GPIO_NUM_NC) {
         return;
     }
@@ -29,7 +29,7 @@ Button::Button(gpio_num_t gpio_num, bool active_high, uint16_t long_press_time, 
     button_gpio_config_t gpio_config = {
         .gpio_num = gpio_num,
         .active_level = static_cast<uint8_t>(active_high ? 1 : 0),
-        .enable_power_save = false,
+        .enable_power_save = enable_power_save,
         .disable_pull = false
     };
     ESP_ERROR_CHECK(iot_button_new_gpio_device(&button_config, &gpio_config, &button_handle_));
@@ -80,32 +80,6 @@ void Button::OnLongPress(std::function<void()> callback) {
     }, this);
 }
 
-void Button::OnLongPressHold(std::function<void()> callback) {
-    if (button_handle_ == nullptr) {
-        return;
-    }
-    on_long_press_hold_ = callback;
-    iot_button_register_cb(button_handle_, BUTTON_LONG_PRESS_HOLD, nullptr, [](void* handle, void* usr_data) {
-        Button* button = static_cast<Button*>(usr_data);
-        if (button->on_long_press_hold_) {
-            button->on_long_press_hold_();
-        }
-    }, this);
-}
-
-void Button::OnLongPressUp(std::function<void()> callback) {
-    if (button_handle_ == nullptr) {
-        return;
-    }
-    on_long_press_up_ = callback;
-    iot_button_register_cb(button_handle_, BUTTON_LONG_PRESS_UP, nullptr, [](void* handle, void* usr_data) {
-        Button* button = static_cast<Button*>(usr_data);
-        if (button->on_long_press_up_) {
-            button->on_long_press_up_();
-        }
-    }, this);
-}
-
 void Button::OnClick(std::function<void()> callback) {
     if (button_handle_ == nullptr) {
         return;
@@ -146,33 +120,6 @@ void Button::OnMultipleClick(std::function<void()> callback, uint8_t click_count
         Button* button = static_cast<Button*>(usr_data);
         if (button->on_multiple_click_) {
             button->on_multiple_click_();
-        }
-    }, this);
-}
-
-void Button::OnPressRepeat(std::function<void(uint16_t)> callback) {
-    if (button_handle_ == nullptr) {
-        return;
-    }
-    on_press_repeat_ = callback;
-    iot_button_register_cb(button_handle_, BUTTON_PRESS_REPEAT, NULL, [](void* handle, void* usr_data) {
-        Button* button = static_cast<Button*>(usr_data);
-        if (button->on_press_repeat_) {
-            button->on_press_repeat_(iot_button_get_repeat(button->button_handle_));
-        }
-    }, this);
-}
-
-
-void Button::OnPressRepeaDone(std::function<void(uint16_t)> callback) {
-    if (button_handle_ == nullptr) {
-        return;
-    }
-    on_press_repeat_done_ = callback;
-    iot_button_register_cb(button_handle_, BUTTON_PRESS_REPEAT_DONE, NULL, [](void* handle, void* usr_data) {
-        Button* button = static_cast<Button*>(usr_data);
-        if (button->on_press_repeat_done_) {
-            button->on_press_repeat_done_(iot_button_get_repeat(button->button_handle_));
         }
     }, this);
 }

@@ -1,7 +1,6 @@
 #include "wifi_board.h"
-#include "audio_codecs/es8311_audio_codec.h"
+#include "codecs/es8311_audio_codec.h"
 #include "display/lcd_display.h"
-#include "font_awesome_symbols.h"
 #include "application.h"
 #include "button.h"
 #include "config.h"
@@ -16,15 +15,16 @@
 #include <driver/uart.h>
 #include <cstring>
 
+#if 1
+#include "esp32_camera_legacy.h"
+#else
 #include "esp32_camera.h"
+#endif
 
 #define TAG "esp_sparkbot"
 
-LV_FONT_DECLARE(font_puhui_20_4);
-LV_FONT_DECLARE(font_awesome_20_4);
-
 class SparkBotEs8311AudioCodec : public Es8311AudioCodec {
-private:    
+private:
 
 public:
     SparkBotEs8311AudioCodec(void* i2c_master_handle, i2c_port_t i2c_port, int input_sample_rate, int output_sample_rate,
@@ -50,7 +50,11 @@ private:
     i2c_master_bus_handle_t i2c_bus_;
     Button boot_button_;
     Display* display_;
+#if 1
+    Esp32CameraLegacy* camera_;
+#else
     Esp32Camera* camera_;
+#endif
     light_mode_t light_mode_ = LIGHT_MODE_ALWAYS_ON;
 
     void InitializeI2c() {
@@ -84,6 +88,10 @@ private:
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
+            if (app.StopAlarmRinging()) {
+                ESP_LOGI(TAG, "only stop alarm ringing");
+                return;
+            }
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
             }
@@ -92,12 +100,22 @@ private:
 
         boot_button_.OnDoubleClick([this]() {
             auto& app = Application::GetInstance();
-            app.TakePhoto();
+            if (app.StopAlarmRinging()) {
+                ESP_LOGI(TAG, "only stop alarm ringing");
+                return;
+            }
+            std::string request = "这是什么？";
+            app.PhotoExplain(request, "", false);
         });
 
         boot_button_.OnLongPress([this]() {
             auto& app = Application::GetInstance();
-            app.SendMcpNetworkImage();
+            if (app.StopAlarmRinging()) {
+                ESP_LOGI(TAG, "only stop alarm ringing");
+                return;
+            }
+            std::string request = "这是什么？";
+            app.PhotoExplain(request, "", true);
         });
     }
 
@@ -125,20 +143,16 @@ private:
         panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
         panel_config.bits_per_pixel = 16;
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io, &panel_config, &panel));
-        
+
         esp_lcd_panel_reset(panel);
         esp_lcd_panel_init(panel);
         esp_lcd_panel_invert_color(panel, true);
         esp_lcd_panel_disp_on_off(panel, true);
         display_ = new SpiLcdDisplay(panel_io, panel,
-                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
-                                    {
-                                        .text_font = &font_puhui_20_4,
-                                        .icon_font = &font_awesome_20_4,
-                                        .emoji_font = font_emoji_64_init(),
-                                    });
+                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
+#if 1
     void InitializeCamera() {
         camera_config_t camera_config = {};
 
@@ -165,16 +179,16 @@ private:
         camera_config.ledc_timer = SPARKBOT_LEDC_TIMER;
         camera_config.ledc_channel = SPARKBOT_LEDC_CHANNEL;
         camera_config.fb_location = CAMERA_FB_IN_PSRAM;
-        
+
         camera_config.sccb_i2c_port = I2C_NUM_0;
-        
+
         camera_config.pixel_format = PIXFORMAT_RGB565;
         camera_config.frame_size = FRAMESIZE_240X240;
         camera_config.jpeg_quality = 12;
         camera_config.fb_count = 1;
         camera_config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-        
-        camera_ = new Esp32Camera(camera_config);
+
+        camera_ = new Esp32CameraLegacy(camera_config);
 
         Settings settings("sparkbot", false);
         // 考虑到部分复刻使用了不可动摄像头的设计，默认启用翻转
@@ -182,6 +196,58 @@ private:
         camera_->SetHMirror(camera_flipped);
         camera_->SetVFlip(camera_flipped);
     }
+#else
+    void InitializeCamera() {
+
+        // DVP pin configuration
+        static esp_cam_ctlr_dvp_pin_config_t dvp_pin_config = {
+            .data_width = CAM_CTLR_DATA_WIDTH_8,
+            .data_io = {
+                [0] = SPARKBOT_CAMERA_D0,
+                [1] = SPARKBOT_CAMERA_D1,
+                [2] = SPARKBOT_CAMERA_D2,
+                [3] = SPARKBOT_CAMERA_D3,
+                [4] = SPARKBOT_CAMERA_D4,
+                [5] = SPARKBOT_CAMERA_D5,
+                [6] = SPARKBOT_CAMERA_D6,
+                [7] = SPARKBOT_CAMERA_D7,
+            },
+            .vsync_io = SPARKBOT_CAMERA_VSYNC,
+            .de_io = SPARKBOT_CAMERA_HSYNC,
+            .pclk_io = SPARKBOT_CAMERA_PCLK,
+            .xclk_io = SPARKBOT_CAMERA_XCLK,
+        };
+
+        // 复用 I2C 总线
+        esp_video_init_sccb_config_t sccb_config = {
+            .init_sccb = false,  // 不初始化新的 SCCB，使用现有的 I2C 总线
+            .i2c_handle = i2c_bus_,  // 使用现有的 I2C 总线句柄
+            .freq = 100000,  // 100kHz
+        };
+
+        // DVP configuration
+        esp_video_init_dvp_config_t dvp_config = {
+            .sccb_config = sccb_config,
+            .reset_pin = SPARKBOT_CAMERA_RESET,
+            .pwdn_pin = SPARKBOT_CAMERA_PWDN,
+            .dvp_pin = dvp_pin_config,
+            .xclk_freq = SPARKBOT_CAMERA_XCLK_FREQ,
+        };
+
+        // Main video configuration
+        esp_video_init_config_t video_config = {
+            .dvp = &dvp_config,
+        };
+
+        camera_ = new Esp32Camera(video_config);
+
+        Settings settings("sparkbot", false);
+        // 考虑到部分复刻使用了不可动摄像头的设计，默认启用翻转
+        bool camera_flipped = static_cast<bool>(settings.GetInt("camera-flipped", 1));
+        camera_->SetHMirror(camera_flipped);
+        camera_->SetVFlip(camera_flipped);
+    }
+#endif
 
     /*
         ESP-SparkBot 的底座
@@ -241,7 +307,7 @@ private:
             SendUartMessage("x1.0 y0.0");
             return true;
         });
-        
+
         mcp_server.AddTool("self.chassis.dance", "跳舞", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
             SendUartMessage("d1");
             light_mode_ = LIGHT_MODE_MAX;
@@ -268,12 +334,12 @@ private:
             Settings settings("sparkbot", true);
             // 考虑到部分复刻使用了不可动摄像头的设计，默认启用翻转
             bool flipped = !static_cast<bool>(settings.GetInt("camera-flipped", 1));
-            
+
             camera_->SetHMirror(flipped);
             camera_->SetVFlip(flipped);
-            
+
             settings.SetInt("camera-flipped", flipped ? 1 : 0);
-            
+
             return true;
         });
     }

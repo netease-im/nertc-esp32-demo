@@ -4,13 +4,7 @@
         {
             "name": "bread-compact-wifi",
             "sdkconfig_append": [
-                "CONFIG_OLED_SSD1306_128X32=y",
-                "CONFIG_CONNECTION_TYPE_NERTC=y",
-                "CONFIG_USE_NERTC_SERVER_AEC=y",
-                "CONFIG_USE_AFE_NERTC_WAKE_WORD=y",
-                "CONFIG_IOT_PROTOCOL_XIAOZHI=y",
-                "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y",
-                "CONFIG_SR_MN_CN_MULTINET7_QUANT=y"
+                "CONFIG_OLED_SSD1306_128X32=y"
             ]
         },
         {

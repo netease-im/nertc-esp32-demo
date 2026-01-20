@@ -18,6 +18,9 @@ public:
     // 设置 HTTP Content
     virtual void SetContent(std::string&& content) = 0;
 
+    // 设置 Keep-Alive
+    virtual void SetKeepAlive(bool enable) = 0;
+
     // 打开 HTTP 连接并发送请求
     virtual bool Open(const std::string& method, const std::string& url) = 0;
 
@@ -41,6 +44,9 @@ public:
 
     // 获取 HTTP 响应体
     virtual std::string ReadAll() = 0;
+
+    // 获取最后一次错误码
+    virtual int GetLastError() = 0;
 };
 
 #endif // HTTP_H

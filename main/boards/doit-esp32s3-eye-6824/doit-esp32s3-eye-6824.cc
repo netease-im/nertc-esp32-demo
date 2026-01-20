@@ -1,5 +1,5 @@
 #include "wifi_board.h"
-#include "audio_codecs/vb6824_audio_codec.h"
+#include "audio/codecs/vb6824_audio_codec.h"
 #include "display/lcd_display.h"
 #include "system_reset.h"
 #include "application.h"
@@ -97,12 +97,10 @@ private:
             // 切换聊天状态
             app.ToggleChatState(); });
 
-        boot_button_.OnPressRepeat([this](uint16_t count)
-                                   {
-            if(count >= 3){
-                ESP_LOGI(TAG, "重新配网");
+        boot_button_.OnMultipleClick([this]()
+            {
                 ResetWifiConfiguration();
-            } });
+            });
 #if (defined(CONFIG_VB6824_OTA_SUPPORT) && CONFIG_VB6824_OTA_SUPPORT == 1)
         boot_button_.OnDoubleClick([this]()
                                    {
@@ -123,8 +121,8 @@ private:
     void InitializeIot()
     {
         auto &thing_manager = iot::ThingManager::GetInstance();
-        thing_manager.AddThing(iot::CreateThing("Speaker"));
-        thing_manager.AddThing(iot::CreateThing("Screen"));
+        //thing_manager.AddThing(iot::CreateThing("Speaker"));
+        //thing_manager.AddThing(iot::CreateThing("Screen"));
         // thing_manager.AddThing(iot::CreateThing("Lamp"));
     }
 
@@ -180,17 +178,7 @@ private:
         esp_lcd_panel_invert_color(lcd_panel, DISPLAY_COLOR_INVERT);
         esp_lcd_panel_disp_on_off(lcd_panel, true);
         display_ = new SpiLcdDisplay(lcd_io, lcd_panel,
-                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
-                                     {
-#if CONFIG_LCD_GC9A01_240X240
-                                         .text_font = &font_puhui_20_4,
-                                         .icon_font = &font_awesome_20_4,
-#elif CONFIG_LCD_GC9A01_160X160
-                                         .text_font = &font_puhui_14_1,
-                                         .icon_font = &font_awesome_14_1,
-#endif
-                                         .emoji_font = font_emoji_64_init(),
-                                     });
+                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
         display_->SetEmotion("wifi");
     }
 
@@ -222,7 +210,7 @@ private:
         wifi_station.OnConnect([this](const std::string &ssid)
                                {
         auto& application = Application::GetInstance();
-        application.PlaySound(Lang::Sounds::P3_CONNECTED);
+        //application.PlaySound(Lang::Sounds::P3_CONNECTED);
 
         auto display = Board::GetInstance().GetDisplay();
         std::string notification = Lang::Strings::CONNECT_TO;

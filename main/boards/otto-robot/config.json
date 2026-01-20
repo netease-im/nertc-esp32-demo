@@ -4,6 +4,7 @@
         {
             "name": "otto-robot",
             "sdkconfig_append": [
+                "CONFIG_HTTPD_WS_SUPPORT=y"
             ]
         }
     ]

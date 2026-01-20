@@ -32,7 +32,10 @@ static const char* const RTC_CALL_STATE_STRINGS[] = {
     "connected",
 };
 
+#if NERTC_ENABLE_CONFIG_FILE
 std::string NeRtcProtocol::config_file_path_ = "/spiffs/config.json";
+#endif
+
 NeRtcProtocol::NeRtcProtocol() {
     ESP_LOGI(TAG, "Start create: Free: %u minimal: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
 
@@ -99,13 +102,8 @@ NeRtcProtocol::NeRtcProtocol() {
     //如果打开服务端aec，这3个参数会由sdk内部控制
     nertc_sdk_config.audio_config.channels = 1;
     nertc_sdk_config.audio_config.frame_duration = local_frame_duration_config > 0 ? local_frame_duration_config : Application::GetInstance().OpusFrameDurationMs();
-#if CONFIG_IDF_TARGET_ESP32C3
-    nertc_sdk_config.audio_config.sample_rate = 8000;
-    nertc_sdk_config.audio_config.out_sample_rate = 8000; //指定下行采样率使用8k
-#else
     nertc_sdk_config.audio_config.sample_rate = 16000;
     nertc_sdk_config.audio_config.out_sample_rate = 16000; //指定下行采样率使用16k
-#endif
     nertc_sdk_config.audio_config.codec_type = NERTC_SDK_AUDIO_CODEC_TYPE_OPUS;
     ESP_LOGI(TAG, "Start set nertc sdk handler: Free: %u minimal: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
 
@@ -169,14 +167,9 @@ NeRtcProtocol::NeRtcProtocol() {
     // 音频配置
     //如果打开服务端aec，这3个参数会由sdk内部控制
     sdk_config.audio_config.channels = 1;
-    sdk_config.audio_config.frame_duration = local_frame_duration_config > 0 ? local_frame_duration_config : Application::GetInstance().OpusFrameDurationMs();
-#if CONFIG_IDF_TARGET_ESP32C3
-    sdk_config.audio_config.sample_rate = 8000;
-    sdk_config.audio_config.out_sample_rate = 8000; //指定下行采样率使用8k
-#else
+    sdk_config.audio_config.frame_duration = local_frame_duration_config > 0 ? local_frame_duration_config : Application::GetInstance().GetAudioService().opus_frame_duration();
     sdk_config.audio_config.sample_rate = 16000;
     sdk_config.audio_config.out_sample_rate = 16000; //指定下行采样率使用16k
-#endif
     sdk_config.audio_config.codec_type = NERTC_SDK_AUDIO_CODEC_TYPE_OPUS;
 
     // 可选配置
@@ -219,14 +212,14 @@ NeRtcProtocol::NeRtcProtocol() {
     // 第二步：准备初始化引擎的配置
     nertc_sdk_engine_config_t engine_config = {};
     nertc_sdk_engine_config_init(&engine_config);
-
     // 引擎模式
 #if CONFIG_USE_NERTC_PTT_MODE
     engine_config.engine_mode = NERTC_SDK_ENGINE_MODE_PTT;
 #else
     engine_config.engine_mode = NERTC_SDK_ENGINE_MODE_AI;
 #endif
-
+    // feature配置
+    engine_config.feature_config.enable_mcp_server = true;
     // 事件回调配置
     engine_config.event_handler.on_error = OnError;
     engine_config.event_handler.on_license_expire_warning = OnLicenseExpireWarning;
@@ -240,10 +233,8 @@ NeRtcProtocol::NeRtcProtocol() {
     engine_config.event_handler.on_asr_caption_result = OnAsrCaptionResult;
     engine_config.event_handler.on_ai_data = OnAiData;
     engine_config.event_handler.on_audio_encoded_data = OnAudioData;
-
     // 用户数据
     engine_config.user_data = this;
-
     // 外部网络接口
     if (Board::GetInstance().GetBoardType() == "ml307") { //4G模组，需要外部网络IO
         NeRtcExternalNetwork* ext_net = NeRtcExternalNetwork::GetInstance();
@@ -252,7 +243,9 @@ NeRtcProtocol::NeRtcProtocol() {
         engine_config.ext_net_handle = nullptr;
     }
 
+#if NERTC_ENABLE_CONFIG_FILE
     cJSON_Delete(config_json);
+#endif
 
     // 初始化引擎
     auto ret = nertc_init_engine(engine_, &engine_config);
@@ -326,6 +319,7 @@ bool NeRtcProtocol::Start() {
 
     // join room
     uint64_t uid = UID;
+#if NERTC_ENABLE_CONFIG_FILE
     cJSON* config_json = NeRtcProtocol::ReadConfigJson();
     if(config_json) {
         cJSON* custom_config = cJSON_GetObjectItem(config_json, "custom_config");
@@ -341,6 +335,7 @@ bool NeRtcProtocol::Start() {
         }
         cJSON_Delete(config_json);
     }
+#endif
     if (cname_.empty()) {
         uint32_t random_num = 100000 + (esp_random() % 900000);
         cname_ = std::string("80") + std::to_string(random_num);
@@ -396,11 +391,6 @@ void NeRtcProtocol::CloseAudioChannel() {
     if (!engine_)
         return;
 
-    if (phone_call_suspend_) {
-        ESP_LOGI(TAG, "phone call suspend, hand up it!!!");
-        nertc_ai_hang_up(engine_);
-        return;
-    }
     if (GetP2PCallState() == kNERtcP2PCallStateConnected) {
         ESP_LOGE(TAG, "rtc p2p call, not support hand up");
         return;
@@ -428,71 +418,79 @@ bool NeRtcProtocol::IsAudioChannelOpened() const {
     return join_.load() && audio_channel_opened_.load();
 }
 
-bool NeRtcProtocol::SendAudio(const AudioStreamPacket& packet) {
-    if (!engine_ || !join_.load())
+bool NeRtcProtocol::SendAudio(std::unique_ptr<AudioStreamPacket> packet) {
+    if (!engine_ || !join_.load() || !packet)
         return false;
 
-    if(packet.pcm_payload.empty()) {
+    if(packet->pcm_payload.empty()) {
         nertc_sdk_audio_encoded_frame_t encoded_frame;
-        encoded_frame.data = const_cast<unsigned char*>(packet.payload.data());
-        encoded_frame.length = packet.payload.size();
+        encoded_frame.data = const_cast<unsigned char*>(packet->payload.data());
+        encoded_frame.length = packet->payload.size();
         nertc_sdk_audio_config audio_config = {server_sample_rate_, 1, samples_per_channel_};
         nertc_push_audio_encoded_frame(engine_, NERTC_SDK_MEDIA_MAIN_AUDIO, audio_config, 100, &encoded_frame);
     } else {
-        if (packet.sample_rate != server_sample_rate_) {
+        if (packet->sample_rate != server_sample_rate_) {
             ESP_LOGE(TAG, "SendAudio PCM sample rate mismatch: expected %d, got %d",
-                    server_sample_rate_, packet.sample_rate);
+                    server_sample_rate_, packet->sample_rate);
             return false;
         }
 
         nertc_sdk_audio_frame_t audio_frame;
         audio_frame.type = NERTC_SDK_AUDIO_PCM_16;
-        audio_frame.data = const_cast<int16_t*>(packet.pcm_payload.data());
-        audio_frame.length = packet.pcm_payload.size();
+        audio_frame.data = const_cast<int16_t*>(packet->pcm_payload.data());
+        audio_frame.length = packet->pcm_payload.size();
         nertc_push_audio_frame(engine_, NERTC_SDK_MEDIA_MAIN_AUDIO, &audio_frame);
     }
 
     return true;
 }
 
-void NeRtcProtocol::SendAecReferenceAudio(const AudioStreamPacket& packet) {
-    if (!engine_ || !join_.load())
+void NeRtcProtocol::SendAecReferenceAudio(std::unique_ptr<AudioStreamPacket> packet) {
+    if (!engine_ || !join_.load() || !packet)
         return;
 
-    if (packet.sample_rate != server_sample_rate_) {
-        ESP_LOGE(TAG, "SendAecReferenceAudio PCM sample rate mismatch: expected %d, got %d",
-                server_sample_rate_, packet.sample_rate);
+    if (packet->sample_rate != server_sample_rate_) {
+        ESP_LOGE(TAG, "SendAecReferenceAudio sample rate mismatch: expected %d, got %d",
+                server_sample_rate_, packet->sample_rate);
         return;
     }
 
     nertc_sdk_audio_encoded_frame_t encoded_frame;
-    encoded_frame.data = const_cast<unsigned char*>(packet.payload.data());
-    encoded_frame.length = packet.payload.size();
-    encoded_frame.encoded_timestamp = packet.timestamp;
+    encoded_frame.data = const_cast<unsigned char*>(packet->payload.data());
+    encoded_frame.length = packet->payload.size();
+    encoded_frame.encoded_timestamp = packet->timestamp;
 
     nertc_sdk_audio_frame_t audio_frame;
     audio_frame.type = NERTC_SDK_AUDIO_PCM_16;
-    audio_frame.data = const_cast<int16_t*>(packet.pcm_payload.data());
-    audio_frame.length = packet.pcm_payload.size();
+    audio_frame.data = const_cast<int16_t*>(packet->pcm_payload.data());
+    audio_frame.length = packet->pcm_payload.size();
     nertc_push_audio_reference_frame(engine_, NERTC_SDK_MEDIA_MAIN_AUDIO, &encoded_frame, &audio_frame);
 }
 
-void NeRtcProtocol::SendMcpMessage(const std::string& message) {
+void NeRtcProtocol::SendTTSText(const std::string& text, int interrupt_mode, bool add_context) {
+     if (!engine_ || !join_.load())
+        return;
+
+    ESP_LOGI(TAG, "SendTTSText:%s", text.c_str());
+    nertc_ai_external_tts(engine_, text.c_str(), interrupt_mode, add_context);
+}
+
+void NeRtcProtocol::SendLlmText(const std::string& text) {
     if (!engine_ || !join_.load())
         return;
 
-    ESP_LOGI(TAG, "SendMcpMessage:%s", message.c_str());
-    nertc_ai_llm_prompt(engine_, message.c_str(), 1);
+    ESP_LOGI(TAG, "SendLlmText:%s", text.c_str());
+    nertc_ai_llm_prompt(engine_, text.c_str(), 1);
 }
 
-void NeRtcProtocol::SendMcpImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) {
+void NeRtcProtocol::SendLlmImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) {
     if (!engine_ || !join_.load())
         return;
     nertc_sdk_ai_llm_request_t* request = new nertc_sdk_ai_llm_request_t;
     request->img_url = img_url;
     request->img_len = img_len;
     request->img_compress_type = compress_type;
-    request->interrupt_mode = 1;
+    request->interrupt_mode = 2;
     request->text = const_cast<char*>(text.c_str());
     request->img_type = (nertc_sdk_llm_image_type_e)img_type;
     nertc_ai_llm_image(engine_, request);
@@ -504,6 +502,22 @@ void NeRtcProtocol::SendMcpImage(const char* img_url, const int32_t img_len, con
     if (data) {
         on_incoming_json_(data);
         cJSON_Delete(data);
+    }
+}
+
+void NeRtcProtocol::SetAISleep() {
+    ESP_LOGI(TAG, "SetAISleep");
+
+    if (!close_timer_) {
+        ESP_LOGE(TAG, "SetAISleep: cancel for timer is null");
+        return;
+    }
+
+    esp_timer_stop(close_timer_);
+    esp_err_t err = esp_timer_start_once(close_timer_, 3 * 1000 * 1000);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "SetAISleep: start CloseAudioChannel_timer fail err: %s", esp_err_to_name(err));
+        CloseAudioChannel();
     }
 }
 
@@ -750,11 +764,11 @@ void NeRtcProtocol::OnUserJoined(const nertc_sdk_callback_context_t* ctx, const 
     if (!instance)
         return;
 
-    if (instance->phone_call_suspend_) {
-        Application::GetInstance().StopRing();
-    }
     if (instance->GetP2PCallState() != kNERtcP2PCallStateIdle) {
         instance->SetP2PCallState(kNERtcP2PCallStateConnected);
+    }
+    if (user && user->type == NERTC_SDK_USER_SIP) {
+        Board::GetInstance().GetDisplay()->SetEmotionForce("call", true);
     }
 }
 
@@ -767,6 +781,9 @@ void NeRtcProtocol::OnUserLeft(const nertc_sdk_callback_context_t* ctx, const ne
 
     if (instance->GetP2PCallState() == kNERtcP2PCallStateConnected) {
         instance->SetP2PCallState(kNERtcP2PCallStateIdle);
+    }
+    if (user && user->type == NERTC_SDK_USER_SIP) {
+        Board::GetInstance().GetDisplay()->SetEmotionForce("neutral", false);
     }
 }
 
@@ -827,36 +844,19 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
 
         std::string event_str = event->valuestring;
         if (event_str.find("audio.agent.speech_") == 0) {
+            if (instance->rtc_mode_ || instance->GetP2PCallState() == kNERtcP2PCallStateConnected) {
+                ESP_LOGW(TAG, "RTC mode, ignore audio.agent.speech_ event");
+                return;
+            }
             cJSON* state_json = instance->BuildApplicationTtsStateProtocol(event_str);
             if (instance->on_incoming_json_) instance->on_incoming_json_(state_json);
             cJSON_Delete(state_json);
             cJSON_Delete(data_json);
             if (event_str == "audio.agent.speech_stopped") {
-                if (instance->phone_call_suspend_) {
-                    Application::GetInstance().StartRing();
-                } else if (instance->GetP2PCallState() == kNERtcP2PCallStatePreConnecting) {
+                if (instance->GetP2PCallState() == kNERtcP2PCallStatePreConnecting) {
                     instance->SetP2PCallState(kNERtcP2PCallStateConnecting);
                 }
             }
-            return;
-        }
-        if (event_str.find("conversation.") == 0) {
-            if (event_str == "conversation.suspend") {
-                instance->phone_call_suspend_ = true;
-                // cJSON* state_json = instance->BuildApplicationTtsStateProtocol("audio.agent.speech_started");
-                // if (instance->on_incoming_json_) instance->on_incoming_json_(state_json);
-                // cJSON_Delete(state_json);
-                Board::GetInstance().GetDisplay()->SetEmotionForce("call", true);
-            } else if (event_str == "conversation.resume") {
-                instance->phone_call_suspend_ = false;
-                // cJSON* state_json = instance->BuildApplicationTtsStateProtocol("audio.agent.speech_stopped");
-                // if (instance->on_incoming_json_) instance->on_incoming_json_(state_json);
-                // cJSON_Delete(state_json);
-                Board::GetInstance().GetDisplay()->SetEmotionForce("neutral", false);
-                Application::GetInstance().StopRing();
-            }
-            ESP_LOGI(TAG, "phone_call_suspend_:%d", instance->phone_call_suspend_);
-            cJSON_Delete(data_json);
             return;
         }
     } else if (strncmp(type_str, "tool", type_len) == 0) {
@@ -954,6 +954,18 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
         if (instance->on_incoming_json_) instance->on_incoming_json_(emot_json);
         cJSON_Delete(emot_json);
         cJSON_Delete(data_json);
+    } else if (strncmp(type_str, "mcp", type_len) == 0) {
+        cJSON* payload_obj = cJSON_Parse(data_str);
+        if (!payload_obj) {
+            ESP_LOGE(TAG, "Failed to parse JSON data");
+            return;
+        }
+
+        cJSON* mcp_json = cJSON_CreateObject();
+        cJSON_AddStringToObject(mcp_json, "type", "mcp");
+        cJSON_AddItemToObject(mcp_json, "payload", payload_obj);
+        if (instance->on_incoming_json_) instance->on_incoming_json_(mcp_json);
+        cJSON_Delete(mcp_json);
     }
 }
 
@@ -968,11 +980,14 @@ void NeRtcProtocol::OnAudioData(const nertc_sdk_callback_context_t* ctx, uint64_
     }
 
     if (instance->on_incoming_audio_ != nullptr) {
-        instance->on_incoming_audio_(AudioStreamPacket{.sample_rate = instance->recommended_audio_config_.out_sample_rate,
-                                                        .frame_duration = instance->server_frame_duration_,
-                                                        .timestamp = encoded_frame->encoded_timestamp,
-                                                        .payload = std::move(payload_vector),
-                                                        .muted = is_mute_packet,});
+        auto packet = std::make_unique<AudioStreamPacket>();
+        packet->sample_rate = instance->recommended_audio_config_.out_sample_rate;
+        packet->frame_duration = instance->server_frame_duration_;
+        packet->timestamp = encoded_frame->encoded_timestamp;
+        packet->payload = std::move(payload_vector);
+        packet->muted = is_mute_packet;
+
+        instance->on_incoming_audio_(std::move(packet));
     }
 }
 
@@ -989,16 +1004,10 @@ bool NeRtcProtocol::SendText(const std::string& text) {
     }
     std::string type = type_item->valuestring;
     if (type == "abort") {
-        if (phone_call_suspend_) {
-            ESP_LOGI(TAG, "phone call suspend, hand up it!!!");
-            nertc_ai_hang_up(engine_);
-            // phone_call_suspend_ = false;
-        } else {
-            nertc_ai_manual_interrupt(engine_);
-            cJSON* state_json = BuildApplicationTtsStateProtocol("audio.agent.speech_stopped");
-            if (on_incoming_json_) on_incoming_json_(state_json);
-            cJSON_Delete(state_json);
-        }
+        nertc_ai_manual_interrupt(engine_);
+        cJSON* state_json = BuildApplicationTtsStateProtocol("audio.agent.speech_stopped");
+        if (on_incoming_json_) on_incoming_json_(state_json);
+        cJSON_Delete(state_json);
     } else if (type == "listen") {
         cJSON* state_item = cJSON_GetObjectItem(data_json, "state");
         if (state_item == nullptr || !cJSON_IsString(state_item)) {
@@ -1016,6 +1025,15 @@ bool NeRtcProtocol::SendText(const std::string& text) {
 
     cJSON_Delete(data_json);
     return true;
+}
+
+void NeRtcProtocol::SendMcpMessage(const std::string& payload) {
+    ESP_LOGI(TAG, "mcp payload: %s", payload.c_str());
+    nertc_sdk_mcp_tool_result_t result;
+    nertc_sdk_mcp_tool_result_init(&result);
+    result.payload = payload.c_str();
+    result.payload_len = payload.length();
+    nertc_ai_reply_mcp_tool_call(engine_, &result);
 }
 
 #if NERTC_ENABLE_CONFIG_FILE
@@ -1132,7 +1150,8 @@ void NeRtcProtocol::SetP2PCallState(NERtcP2PCallState state) {
         Application::GetInstance().StopRing();
     } break;
     case kNERtcP2PCallStatePreConnecting: {
-        SendMcpMessage("请播报以下内容：房间" + cname_ + "，房间" + cname_);
+        std::string tts = "请加入房间" + cname_ + "，房间" + cname_;
+        nertc_ai_external_tts(engine_, tts.c_str(), 0, 0);
     } break;
     case kNERtcP2PCallStateConnecting: {
         auto ret = nertc_stop_ai(engine_);
@@ -1144,6 +1163,14 @@ void NeRtcProtocol::SetP2PCallState(NERtcP2PCallState state) {
     } break;
     case kNERtcP2PCallStateConnected: {
         Application::GetInstance().StopRing();
+        if (on_incoming_json_ && Application::GetInstance().GetDeviceState() != kDeviceStateSpeaking) {
+            ESP_LOGI(TAG, "RTC call connected, send speaking state to application");
+            cJSON* state_json = BuildApplicationTtsStateProtocol("audio.agent.speech_started");
+            on_incoming_json_(state_json);
+            cJSON_Delete(state_json);
+        } else {
+            ESP_LOGI(TAG, "RTC call connected, but application is speaking");
+        }
     } break;
     default:
         break;
@@ -1152,4 +1179,26 @@ void NeRtcProtocol::SetP2PCallState(NERtcP2PCallState state) {
 
 NERtcP2PCallState NeRtcProtocol::GetP2PCallState() {
     return rtc_p2p_state_;
+}
+
+void NeRtcProtocol::TestDestroy() {
+    ESP_LOGI(TAG, "TestDestroy");
+    if (engine_) {
+        nertc_leave(engine_);
+        nertc_destroy_engine(engine_);
+        engine_ = nullptr;
+    }
+    ESP_LOGI(TAG, "TestDestroy done");
+
+    nertc_sdk_configuration_t sdk_config = { 0 };
+    nertc_sdk_configuration_init(&sdk_config);
+    sdk_config.app_key = "your_app_key";
+    sdk_config.device_id = "your_device_id";
+    engine_ = nertc_create_engine_with_config(&sdk_config);
+    if (!engine_) {
+        ESP_LOGE(TAG, "Failed to create NERtc engine");
+        return;
+    }
+
+    ESP_LOGI(TAG, "TestDestroy success");
 }

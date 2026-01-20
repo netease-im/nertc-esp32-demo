@@ -28,10 +28,15 @@ public:
     bool OpenAudioChannel() override;
     void CloseAudioChannel() override;
     bool IsAudioChannelOpened() const override;
-    bool SendAudio(const AudioStreamPacket& packet) override;
-    void SendAecReferenceAudio(const AudioStreamPacket& packet) override;
+    bool SendAudio(std::unique_ptr<AudioStreamPacket> packet) override;
+    void SendAecReferenceAudio(std::unique_ptr<AudioStreamPacket> packet) override;
     void SendMcpMessage(const std::string& message) override;
-    void SendMcpImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) override;
+    void SetAISleep() override;
+    void SendTTSText(const std::string& text, int interrupt_mode, bool add_context) override;
+    void SendLlmText(const std::string& text) override;
+    void SendLlmImage(const char* img_url, const int32_t img_len, const int compress_type, const std::string& text, int img_type) override;
+
+    void TestDestroy() override;
 private:
     void RequestChecksum(std::string& checksum);
     void ParseFunctionCall(cJSON* data, std::string& arguments, std::string& name);
@@ -61,15 +66,13 @@ private:
     EventGroupHandle_t event_group_ = nullptr;
     std::string cname_;
     nertc_sdk_engine_t engine_ { nullptr };
-    std::atomic<bool> join_ {false}; 
-    std::atomic<bool> audio_channel_opened_ {false}; 
-    uint64_t cid_ { 0 }; 
+    std::atomic<bool> join_ {false};
+    std::atomic<bool> audio_channel_opened_ {false};
+    uint64_t cid_ { 0 };
     uint64_t uid_ { 0 };
     nertc_sdk_audio_config_t recommended_audio_config_ { 0 };
     esp_timer_handle_t asr_timer_ { nullptr };
     esp_timer_handle_t close_timer_ { nullptr };
-
-    bool phone_call_suspend_ { false }; 
 private:
     bool SendText(const std::string& text) override;
 
@@ -89,7 +92,7 @@ private:
     bool rtc_mode_ = false; // donot start ai
     NERtcP2PCallState rtc_p2p_state_ = kNERtcP2PCallStateIdle;
     std::chrono::steady_clock::time_point rtc_p2p_start_time_;
-    
+
 };
 
 #endif
