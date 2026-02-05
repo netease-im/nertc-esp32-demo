@@ -30,6 +30,9 @@ public:
     const std::string& GetActivationMessage() const { return activation_message_; }
     const std::string& GetActivationCode() const { return activation_code_; }
     std::string GetCheckVersionUrl();
+    int GetOtaAgentInterruptMode() const { return agent_interrupt_mode_; }
+    bool GetSupportAirMusicPlayer() const { return support_air_music_player; }
+    bool GetSupportAirMusicIn4G() const { return support_air_music_in_4G; }
 
 private:
     std::string activation_message_;
@@ -47,7 +50,9 @@ private:
     std::string activation_challenge_;
     std::string serial_number_;
     int activation_timeout_ms_ = 30000;
-
+    int agent_interrupt_mode_ = -1; //0:不打断，1:开始说话打断，2:结束说话打断, 3:打断词打断
+    bool support_air_music_player = false;
+    bool support_air_music_in_4G = false;
     bool Upgrade(const std::string& firmware_url);
     std::function<void(int progress, size_t speed)> upgrade_callback_;
     std::vector<int> ParseVersion(const std::string& version);

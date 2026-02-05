@@ -15,6 +15,7 @@
 #include "ota.h"
 #include "audio_service.h"
 #include "device_state_event.h"
+#include "music_player/music_player.h"
 #if CONFIG_CONNECTION_TYPE_NERTC
 #include "alarm.h"
 #endif
@@ -68,6 +69,8 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
+    void Close();
+    static void ParseSongListFromJson(const std::string& json, std::vector<MusicInfo>& out_list, bool& play_now);
 
 #if CONFIG_CONNECTION_TYPE_NERTC
     // codec
@@ -94,6 +97,8 @@ public:
     // ai sleep
     void SetAISleep();
 
+    void ReadNertcConfig();
+    bool GetNertcTestMode() const { return enable_test_mode_; }
     //
     void TestDestroy();
 #endif
@@ -160,6 +165,7 @@ private:
 
     // ai sleep
     bool ai_sleep_ = false;
+    bool enable_test_mode_ = false;
 #endif
 };
 

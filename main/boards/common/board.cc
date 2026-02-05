@@ -4,6 +4,7 @@
 #include "display/display.h"
 #include "display/oled_display.h"
 #include "assets/lang_config.h"
+#include "application.h"
 
 #include <esp_log.h>
 #include <esp_ota_ops.h>
@@ -124,6 +125,12 @@ std::string Board::GetSystemInfoJson() {
 
     auto app_desc = esp_app_get_description();
     json += R"("application":{)";
+
+    //capablities add
+    json += R"("capabilities":{"netease_cloud_music":{"support_play":)";
+    json += (GetBoardType() == std::string("wifi") ? "true" : "false");
+    json += R"(}},)";
+    
     json += R"("name":")" + std::string(app_desc->project_name) + R"(",)";
     json += R"("version":")" + std::string(app_desc->version) + R"(",)";
     json += "\"board_name\":\"" + GetBoardName() + "\",";
@@ -176,4 +183,96 @@ std::string Board::GetSystemInfoJson() {
     // Close the JSON object
     json += R"(})";
     return json;
+}
+
+std::string Board::GetBoardName() {
+    return SystemInfo::GetMacAddress();
+}
+
+void Board::StartBlufiMode(bool blufi) {
+    GetDisplay()->ShowNotification(Lang::Strings::ENTERING_WIFI_CONFIG_MODE);
+
+    auto& application = Application::GetInstance();
+    application.PlaySound(Lang::Sounds::OGG_BLUFI);
+    bool test_mode = application.GetNertcTestMode();
+    
+    {
+        auto app_desc = esp_app_get_description();
+        Settings settings("board", true);
+        settings.SetString("id",        SystemInfo::GetMacAddress());
+        settings.SetString("type",      std::string("yunxin"));
+        settings.SetString("version",   esp_app_get_description()->version);
+        settings.SetInt("blufi",        blufi ? 1 : 0);
+        settings.SetInt("test",         test_mode ? 1 : 0);
+        
+        std::string app = "app";
+        settings.EraseKey(app.c_str());
+        settings.SetInt(app.c_str(), 1); //blufi 1, ota 2
+        ESP_LOGI(TAG, "StartBlufiMode name:%s id:%s type:%s version:%s set blufi nvs app to 1", 
+            GetBoardName().c_str(), SystemInfo::GetMacAddress().c_str(), std::string(app_desc->project_name).c_str(),
+            esp_app_get_description()->version);
+    }
+
+    const esp_partition_t *blufi_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "blufi");
+    
+    if (blufi_partition != NULL) {
+        esp_ota_set_boot_partition(blufi_partition);
+        ESP_LOGI(TAG, "Switched to blufi partition:%s at offset 0x%lx subtype:%d, restarting...\n",
+            blufi_partition->label, blufi_partition->address, blufi_partition->subtype);
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
+    } else {
+        ESP_LOGI(TAG, "Blufi partition not found!\n");
+    }
+}
+
+void Board::StartBlufiOtaMode(const std::string& upgrade_url, const std::string& upgrade_version, const std::string& md5) {
+    GetDisplay()->ShowNotification(Lang::Strings::OTA_UPGRADE);
+    
+    {
+        Settings settings("board", true);
+        
+        std::string app = "app";
+        settings.EraseKey(app.c_str());
+        settings.SetInt(app.c_str(), 2); //blufi 1, ota 2
+        settings.SetString("version",   esp_app_get_description()->version);
+        settings.EraseKey("ota_v");
+        settings.EraseKey("ota_url");
+        settings.EraseKey("ota_md5");
+        settings.SetString("ota_v", upgrade_version.c_str());
+        settings.SetString("ota_url",   upgrade_url.c_str());
+        settings.SetString("ota_md5",   md5.c_str()); 
+        ESP_LOGI(TAG, "StartBlufiOtaMode %s set blufi nvs app to 2. upgrade_url: %s upgrade_version: %s md5: %s", 
+            GetBoardName().c_str(), upgrade_url.c_str(), upgrade_version.c_str(), md5.c_str());
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    { //这个数据非常重要，check nvs 是否写成功
+        Settings settings("board", false);
+        
+        std::string app = "app";
+        int appType = settings.GetInt(app.c_str(), 0); //blufi 1, ota 2
+        if (appType != 2) {
+            ESP_LOGE(TAG, "StartBlufiOtaMode set blufi nvs app failed, appType=%d", appType);
+            esp_restart();
+        }
+        ESP_LOGI(TAG, "StartBlufiOtaMode get blufi nvs app:%d", appType);
+    }
+
+    const esp_partition_t *blufi_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "blufi");
+    
+    if (blufi_partition != NULL) {
+        esp_ota_set_boot_partition(blufi_partition);
+        ESP_LOGI(TAG, "Switched to blufi ota partition:%s at offset 0x%lx subtype:%d, restarting...\n",
+            blufi_partition->label, blufi_partition->address, blufi_partition->subtype);
+
+        vTaskDelay(pdMS_TO_TICKS(300));
+        esp_restart();
+    } else {
+        ESP_LOGI(TAG, "Blufi partition not found!\n");
+    }
 }

@@ -2,6 +2,7 @@
 #include "system_info.h"
 #include "settings.h"
 #include "assets/lang_config.h"
+#include "application.h"
 
 #include <cJSON.h>
 #include <esp_log.h>
@@ -46,6 +47,11 @@ std::string Ota::GetCheckVersionUrl() {
     if (url.empty()) {
         url = CONFIG_OTA_URL;
     }
+#if CONFIG_CONNECTION_TYPE_NERTC
+    auto& application = Application::GetInstance();
+    if (application.GetNertcTestMode())
+        url = "http://webtest.netease.im/v1/ota";
+#endif
     return url;
 }
 
@@ -80,6 +86,7 @@ esp_err_t Ota::CheckVersion() {
     ESP_LOGI(TAG, "Current version: %s", current_version_.c_str());
 
     std::string url = GetCheckVersionUrl();
+    printf("ota url = %s\n", url.c_str());
     if (url.length() < 10) {
         ESP_LOGE(TAG, "Check version URL is not properly set");
         return ESP_ERR_INVALID_ARG;
@@ -88,6 +95,7 @@ esp_err_t Ota::CheckVersion() {
     auto http = SetupHttp();
 
     std::string data = board.GetSystemInfoJson();
+    ESP_LOGI(TAG, "ota url: %s deviceId:%s\n", url.c_str(), board.GetBoardName().c_str());
     std::string method = data.length() > 0 ? "POST" : "GET";
     http->SetContent(std::move(data));
 
@@ -104,6 +112,7 @@ esp_err_t Ota::CheckVersion() {
     }
 
     data = http->ReadAll();
+    ESP_LOGI(TAG, "ota data: %s\n", data.c_str());
     http->Close();
 
     // Response: { "firmware": { "version": "1.0.0", "url": "http://" } }
@@ -235,6 +244,28 @@ esp_err_t Ota::CheckVersion() {
         }
     } else {
         ESP_LOGW(TAG, "No firmware section found!");
+    }
+
+    cJSON *agent = cJSON_GetObjectItem(root, "agent");
+    if (cJSON_IsObject(agent)) {
+        cJSON *pipeline = cJSON_GetObjectItem(agent, "pipeline");
+        if (cJSON_IsObject(pipeline)) {
+            cJSON *interrupt_mode = cJSON_GetObjectItem(pipeline, "interrupt_mode");
+            if (cJSON_IsNumber(interrupt_mode)) {
+                agent_interrupt_mode_ = interrupt_mode->valueint;
+            }
+        }
+        cJSON* netease_cloud_music = cJSON_GetObjectItem(agent, "netease_cloud_music");
+        if (cJSON_IsObject(netease_cloud_music)){
+            cJSON *support_music = cJSON_GetObjectItem(netease_cloud_music, "support_music");
+            cJSON *support_play_in_4g = cJSON_GetObjectItem(netease_cloud_music, "support_play_in_4g");
+            if (cJSON_IsBool(support_music)) {
+                support_air_music_player = support_music->valueint;
+            }
+            if (cJSON_IsBool(support_play_in_4g)){
+                support_air_music_in_4G = support_play_in_4g->valueint;
+            }
+        }
     }
 
     cJSON_Delete(root);

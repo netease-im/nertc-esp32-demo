@@ -119,6 +119,7 @@ NeRtcProtocol::NeRtcProtocol() {
     nertc_sdk_config.event_handler.on_asr_caption_result = OnAsrCaptionResult;
     nertc_sdk_config.event_handler.on_ai_data = OnAiData;
     nertc_sdk_config.event_handler.on_audio_encoded_data = OnAudioData;
+    nertc_sdk_config.event_handler.on_server_time = OnServerTime;
 
     // optional_config
 #if CONFIG_IDF_TARGET_ESP32S3
@@ -233,6 +234,7 @@ NeRtcProtocol::NeRtcProtocol() {
     engine_config.event_handler.on_asr_caption_result = OnAsrCaptionResult;
     engine_config.event_handler.on_ai_data = OnAiData;
     engine_config.event_handler.on_audio_encoded_data = OnAudioData;
+    engine_config.event_handler.on_server_time = OnServerTime;
     // 用户数据
     engine_config.user_data = this;
     // 外部网络接口
@@ -966,6 +968,38 @@ void NeRtcProtocol::OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_
         cJSON_AddItemToObject(mcp_json, "payload", payload_obj);
         if (instance->on_incoming_json_) instance->on_incoming_json_(mcp_json);
         cJSON_Delete(mcp_json);
+
+    }else if(strncmp(type_str, "songSearch", type_len) == 0) {
+        cJSON* data_json = cJSON_Parse(data_str);
+        if (!data_json) {
+            ESP_LOGE(TAG, "Failed to parse JSON data");
+            return;
+        }
+        cJSON* message = cJSON_GetObjectItem(data_json, "message");
+        if (!message || !cJSON_IsString(message)) {
+            ESP_LOGE(TAG, "message is null");
+            cJSON_Delete(data_json);
+            return;
+        }
+        std::string songList = message->valuestring;
+        cJSON* update_song_json = cJSON_CreateObject();
+        cJSON_AddStringToObject(update_song_json, "type", "updateSongList");
+        cJSON_AddStringToObject(update_song_json, "songList", songList.c_str());
+        if (instance->on_incoming_json_) instance->on_incoming_json_(update_song_json);
+        cJSON_Delete(update_song_json);
+        cJSON_Delete(data_json);
+    } else if (strncmp(type_str, "textToImg", type_len) == 0) {
+        cJSON* data_json = cJSON_Parse(data_str);
+        if (!data_json) {
+            ESP_LOGE(TAG, "Failed to parse JSON data");
+            return;
+        }
+        cJSON* app_json = cJSON_CreateObject();
+        cJSON_AddStringToObject(app_json, "type", "app");
+        cJSON_AddItemToObject(app_json, "payload", data_json);
+        if (instance->on_incoming_json_) instance->on_incoming_json_(app_json);
+        cJSON_Delete(app_json);
+        cJSON_Delete(data_json);
     }
 }
 
@@ -989,6 +1023,23 @@ void NeRtcProtocol::OnAudioData(const nertc_sdk_callback_context_t* ctx, uint64_
 
         instance->on_incoming_audio_(std::move(packet));
     }
+}
+
+void NeRtcProtocol::OnServerTime(const nertc_sdk_callback_context_t* ctx, uint64_t timestamp, uint32_t timezone_offset) {
+    NeRtcProtocol* instance = static_cast<NeRtcProtocol*>(ctx->user_data);
+    if (!instance || timestamp == 0)
+        return;
+
+    // 同步设备时间
+    struct timeval tv;
+    uint64_t ts = timestamp;
+
+    // 如果有时区偏移，计算本地时间
+    ts += (timezone_offset * 60 * 1000); // 转换分钟为毫秒
+
+    tv.tv_sec = (time_t)(ts / 1000);  // 转换毫秒为秒
+    tv.tv_usec = (suseconds_t)((long long)ts % 1000) * 1000;  // 剩余的毫秒转换为微秒
+    settimeofday(&tv, NULL);
 }
 
 bool NeRtcProtocol::SendText(const std::string& text) {

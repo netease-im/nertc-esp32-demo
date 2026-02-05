@@ -590,7 +590,7 @@ public:
         InitializeGc9107Display();
         GetBacklight()->SetBrightness(100);
 #endif
-        GetAudioCodec()->SetOutputVolume(100);
+        GetAudioCodec()->SetOutputVolume(70);
         touch_init();
         xTaskCreate(touch_read_task, "touch_read_task", 2048, this, 5, NULL);
         InitializeMpu6050();

@@ -4,6 +4,7 @@
 
 #if CONFIG_USE_AUDIO_PROCESSOR
 #include "processors/afe_audio_processor.h"
+#include "processors/pure_afe_audio_processor.h"
 #else
 #include "processors/no_audio_processor.h"
 #endif
@@ -69,7 +70,9 @@ void AudioService::Initialize(AudioCodec* codec) {
     /* Setup the audio codec */
     opus_decoder_ = std::make_unique<OpusDecoderWrapper>(codec->output_sample_rate(), 1, opus_frame_duration());
 #ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
+#if defined (CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)
     opus_decoder2_ = std::make_unique<OpusDecoderWrapper>(16000, 1, 20);
+#endif
 #else
     opus_encoder_ = std::make_unique<OpusEncoderWrapper>(16000, 1, opus_frame_duration());
     opus_encoder_->SetComplexity(0);
@@ -81,7 +84,16 @@ void AudioService::Initialize(AudioCodec* codec) {
     }
 
 #if CONFIG_USE_AUDIO_PROCESSOR
-    audio_processor_ = std::make_unique<AfeAudioProcessor>();
+    if(codec->input_channels() == 1 && !codec->input_reference())
+    {
+        ESP_LOGI(TAG, "Using Pure AFE audio processor");
+        audio_processor_ = std::make_unique<PureAfeAudioProcessor>();
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Using AFE audio processor");
+        audio_processor_ = std::make_unique<AfeAudioProcessor>();
+    }
 #else
     audio_processor_ = std::make_unique<NoAudioProcessor>();
 #endif
@@ -117,12 +129,17 @@ void AudioService::Start() {
     esp_timer_start_periodic(audio_power_timer_, 1000000);
 
 #if CONFIG_USE_AUDIO_PROCESSOR
+    int input_task_stack_size = 2048 * 3;
+    if(codec_->input_channels() == 1 && !codec_->input_reference())
+    {
+        input_task_stack_size = 2048 * 4;
+    }
     /* Start the audio input task */
     xTaskCreatePinnedToCore([](void* arg) {
         AudioService* audio_service = (AudioService*)arg;
         audio_service->AudioInputTask();
         vTaskDelete(NULL);
-    }, "audio_input", 2048 * 3, this, 8, &audio_input_task_handle_, 0);
+    }, "audio_input", input_task_stack_size, this, 8, &audio_input_task_handle_, 0);
 
     /* Start the audio output task */
     xTaskCreate([](void* arg) {
@@ -153,7 +170,7 @@ void AudioService::Start() {
         vTaskDelete(NULL);
     }, "opus_codec", 2048 * 13, this, 2, &opus_codec_task_handle_);
 
-#ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
+#if defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS) && (defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4))
     xTaskCreate([](void* arg) {
         AudioService* audio_service = (AudioService*)arg;
         audio_service->WakeOpusCodecTask();
@@ -323,7 +340,7 @@ void AudioService::AudioInputTask() {
 
         /* Feed the wake word */
         if (bits & AS_EVENT_WAKE_WORD_RUNNING) {
-#ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
+#if defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS) && (defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4))
             OnAudioInputDecodeForWakeWord();
             continue;
 #else        
@@ -399,7 +416,11 @@ void AudioService::AudioOutputTask() {
             codec_->EnableOutput(true);
         }
         codec_->OutputData(task->pcm);
-
+        auto uxNow = xEventGroupGetBits(event_group_);
+        if(uxNow & AS_EVENT_AUDIO_PROCESSOR_RUNNING)
+        {
+            audio_processor_->InputReferenceAudio(task->pcm);
+        }
         /* Update the last output time */
         last_output_time_ = std::chrono::steady_clock::now();
         debug_statistics_.playback_count++;
@@ -586,7 +607,7 @@ void AudioService::EnableWakeWordDetection(bool enable) {
         return;
     }
 
-    ESP_LOGD(TAG, "%s wake word detection", enable ? "Enabling" : "Disabling");
+    ESP_LOGI(TAG, "%s wake word detection", enable ? "Enabling" : "Disabling");
     if (enable) {
         if (!wake_word_initialized_) {
             if (!wake_word_->Initialize(codec_, models_list_)) {
@@ -615,7 +636,7 @@ void AudioService::EnableWakeWordDetection(bool enable) {
 }
 
 void AudioService::EnableVoiceProcessing(bool enable) {
-    ESP_LOGD(TAG, "%s voice processing", enable ? "Enabling" : "Disabling");
+    ESP_LOGI(TAG, "%s voice processing", enable ? "Enabling" : "Disabling");
     if (enable) {
         if (!audio_processor_initialized_) {
             audio_processor_->Initialize(codec_, opus_frame_duration(), models_list_);
@@ -819,6 +840,10 @@ void AudioService::SetModelsList(srmodel_list_t* models_list) {
             }
         });
     }
+}
+
+void AudioService::UpdateLastOutputTime(){
+    last_output_time_ =  std::chrono::steady_clock::now();
 }
 
 bool AudioService::IsAfeWakeWord() {

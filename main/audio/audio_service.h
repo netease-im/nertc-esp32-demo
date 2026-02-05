@@ -35,7 +35,11 @@
  */
 
 #define MAX_ENCODE_TASKS_IN_QUEUE 2
+#if defined(CONFIG_BOARD_TYPE_DOIT_AI_SPEAKER)
+#define MAX_PLAYBACK_TASKS_IN_QUEUE 4
+#else
 #define MAX_PLAYBACK_TASKS_IN_QUEUE 2
+#endif
 // #define MAX_DECODE_PACKETS_IN_QUEUE (2400 / OPUS_FRAME_DURATION_MS)
 // #define MAX_SEND_PACKETS_IN_QUEUE (2400 / OPUS_FRAME_DURATION_MS)
 #define AUDIO_TESTING_MAX_DURATION_MS 10000
@@ -106,6 +110,7 @@ public:
     std::unique_ptr<AudioStreamPacket> PopPacketFromSendQueue();
     void PlaySound(const std::string_view& sound);
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);
+    void UpdateLastOutputTime();
 #ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
     bool ReadAudioData(std::vector<uint8_t>& data, int sample_rate, int samples);
     void OnAudioInputDecodeForWakeWord();

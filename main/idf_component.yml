@@ -104,3 +104,7 @@ dependencies:
     version: '>=5.4.0'
   espressif/mpu6050: "==1.2.0"
   espressif/esp_lcd_touch_st7123: ^1.0.0
+  espressif/esp_audio_simple_player: ^0.9.5
+  chmorgan/esp-libhelix-mp3:
+    version: "*"
+

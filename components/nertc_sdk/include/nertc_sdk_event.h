@@ -163,6 +163,16 @@ typedef struct nertc_sdk_event_handler {
                                 nertc_sdk_audio_encoded_frame_t* encoded_frame,
                                 bool is_mute_packet);
 
+  /**
+   * 服务器当前时间回调，用户设备同步时间
+   * @param ctx 回调上下文
+   * @param timestamp 服务器时间戳，单位：毫秒
+   * @param timezone_offset 时区, 单位：分钟
+  */ 
+  void (*on_server_time)(const nertc_sdk_callback_context_t* ctx, 
+                         uint64_t timestamp, 
+                         uint32_t timezone_offset);
+
 } nertc_sdk_event_handle_t;
 
 typedef struct nertc_sdk_engine_config {
