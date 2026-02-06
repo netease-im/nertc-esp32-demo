@@ -27,6 +27,7 @@ public:
     void OnVadStateChange(std::function<void(bool speaking)> callback) override;
     size_t GetFeedSize() override;
     void EnableDeviceAec(bool enable) override;
+    void InputReferenceAudio(const std::vector<int16_t>& data) override {}
 
 private:
     EventGroupHandle_t event_group_ = nullptr;

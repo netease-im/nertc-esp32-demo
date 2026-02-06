@@ -274,6 +274,9 @@ void Application::DismissAlert() {
 }
 
 void Application::ToggleChatState() {
+#ifdef CONFIG_USE_MUSIC_PLAYER
+    MusicPlayer::GetInstance().InterruptPlay();
+#endif
     if (device_state_ == kDeviceStateActivating) {
         SetDeviceState(kDeviceStateIdle);
         return;
@@ -389,7 +392,6 @@ void Application::Start() {
     auto codec = board.GetAudioCodec();
     audio_service_.Initialize(codec);
     audio_service_.Start();
-
     AudioServiceCallbacks callbacks;
     callbacks.on_send_queue_available = [this]() {
         xEventGroupSetBits(event_group_, MAIN_EVENT_SEND_AUDIO);
@@ -413,6 +415,9 @@ void Application::Start() {
 
     /* Wait for the network to be ready */
     board.StartNetwork();
+
+    ReadNertcConfig();
+
     audio_service_.PlaySound(Lang::Sounds::OGG_CONNECTED);
     // Update the status bar immediately to show the network state
     display->UpdateStatusBar(true);
@@ -422,8 +427,14 @@ void Application::Start() {
 
     // Check for new firmware version or get the MQTT broker address
     Ota ota;
-    //CheckNewVersion(ota); // 暂时不做ota升级
-
+    CheckNewVersion(ota); // 暂时不做ota升级
+    int interrupteMode = ota.GetOtaAgentInterruptMode();
+    aec_mode_ = interrupteMode == 0 ? kAecOff : kAecOnDeviceSide;
+#ifdef CONFIG_USE_MUSIC_PLAYER
+    if (ota.GetSupportAirMusicPlayer() && (Board::GetInstance().GetBoardType() != "ml307")){
+        MusicPlayer::GetInstance().Initialize(codec, &audio_service_);
+    } 
+#endif
     // Initialize the protocol
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
@@ -432,11 +443,6 @@ void Application::Start() {
     mcp_server.AddCommonTools();
     mcp_server.AddUserOnlyTools();
 
-    if (ota.HasMqttConfig()) {
-        protocol_ = std::make_unique<MqttProtocol>();
-    } else if (ota.HasWebsocketConfig()) {
-        protocol_ = std::make_unique<WebsocketProtocol>();
-    } else {
 #if CONFIG_CONNECTION_TYPE_NERTC
         protocol_ = std::make_unique<NeRtcProtocol>();
         DealAppStartEvent();
@@ -444,7 +450,6 @@ void Application::Start() {
         ESP_LOGW(TAG, "No protocol specified in the OTA config, using MQTT");
         protocol_ = std::make_unique<MqttProtocol>();
 #endif
-    }
 
     protocol_->OnConnected([this]() {
         DismissAlert();
@@ -578,6 +583,37 @@ void Application::Start() {
                 ESP_LOGW(TAG, "Invalid custom message format: missing payload");
             }
 #endif
+        }
+        else if (strcmp(type->valuestring, "updateSongList") == 0) {
+#ifdef CONFIG_USE_MUSIC_PLAYER
+            auto song_list_str = cJSON_GetObjectItem(root, "songList");
+            ESP_LOGI(TAG, "Received custom message: %s", cJSON_PrintUnformatted(root));
+            if (cJSON_IsString(song_list_str)) {
+                std::string song_list = song_list_str->valuestring;
+                auto& board = Board::GetInstance();
+                if(board.GetBoardType() == std::string("wifi")){
+                    Schedule([this, song_list]() {
+                        std::vector<MusicInfo> searched_song_list;
+                        bool play_now = false;
+                        ParseSongListFromJson(song_list, searched_song_list, play_now);
+                        if(searched_song_list.size() > 0){
+                            MusicPlayer::GetInstance().UpdateAirMusicListAndPlay(searched_song_list, play_now);
+                        }
+                    });
+                }
+            } else {
+                ESP_LOGW(TAG, "Invalid custom message format: missing payload");
+            }
+#endif
+        } else if (strcmp(type->valuestring, "app") == 0) {
+            auto payload = cJSON_GetObjectItem(root, "payload");
+            if (cJSON_IsObject(payload)) {
+                cJSON* message = cJSON_GetObjectItem(payload, "message");
+                cJSON* subtype = cJSON_GetObjectItem(payload, "type");
+                if (cJSON_IsString(subtype) && cJSON_IsString(message)) {
+                    ESP_LOGI(TAG, "app subtype: %s message: %s\n", subtype->valuestring, message->valuestring);
+                }
+            }
         } else {
             ESP_LOGW(TAG, "Unknown message type: %s", type->valuestring);
         }
@@ -671,6 +707,10 @@ void Application::MainEventLoop() {
 }
 
 void Application::OnWakeWordDetected() {
+#ifdef CONFIG_USE_MUSIC_PLAYER
+    MusicPlayer::GetInstance().InterruptPlay();
+#endif
+
     if (!protocol_) {
         return;
     }

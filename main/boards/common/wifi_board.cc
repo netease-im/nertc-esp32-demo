@@ -38,8 +38,7 @@ std::string WifiBoard::GetBoardType() {
 }
 
 void WifiBoard::EnterWifiConfigMode() {
-#ifdef CONFIG_CONNECTION_TYPE_NERTC
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_CONNECTION_TYPE_NERTC && CONFIG_IDF_TARGET_ESP32S3
     if (NeRtcProtocol::MountFileSystem()) {
         auto* config_json = NeRtcProtocol::ReadConfigJson();
         if(config_json) {
@@ -49,7 +48,7 @@ void WifiBoard::EnterWifiConfigMode() {
             }
         }
     }
-#endif
+    return;
 #endif
     auto& application = Application::GetInstance();
     application.SetDeviceState(kDeviceStateWifiConfiguring);
@@ -284,73 +283,59 @@ std::string WifiBoard::GetDeviceStatusJson() {
     return json;
 }
 
-std::string WifiBoard::GetBoardName() {
-    Settings settings("board", true);
-    std::string name = settings.GetString("name");
-    if (name.empty()) {
-        name = SystemInfo::GetWifiName(NERTC_BOARD_NAME);
-        settings.SetString("name", name);
-    }
-    ESP_LOGI(TAG, "GetBoardName name=%s", name.c_str());
-
-    return name;
-}
-
 void WifiBoard::ResetWifiConfigurationWithBlufi() {
-    // Set a flag and reboot the device to enter the wifi blufi mode
-    // {
-    //     Settings settings("wifi", true);
-    //     settings.SetInt("force_blufi", 1);
-    // }
-    GetDisplay()->ShowNotification(Lang::Strings::ENTERING_WIFI_CONFIG_MODE);
+    // GetDisplay()->ShowNotification(Lang::Strings::ENTERING_WIFI_CONFIG_MODE);
 
-    // 播报配置 WiFi 的提示
-    std::string hint = "进入蓝牙配网模式";
-    hint += "\n\n";
-    auto& application = Application::GetInstance();
-    application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "wifi", Lang::Sounds::OGG_BLUFI);
+    // // 播报配置 WiFi 的提示
+    // std::string hint = "进入蓝牙配网模式";
+    // hint += "\n\n";
+    // auto& application = Application::GetInstance();
+    // application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "wifi", Lang::Sounds::OGG_BLUFI);
 
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    // vTaskDelay(pdMS_TO_TICKS(3000));
 
-    const esp_partition_t *blufi_partition = esp_ota_get_next_update_partition(NULL);
+    // const esp_partition_t *blufi_partition = esp_ota_get_next_update_partition(NULL);
     
-    if (blufi_partition != NULL) {
-        esp_ota_handle_t update_handle = 0;
-        auto& assets = Assets::GetInstance();
-        const std::string blufi_bin = "blufi_app.bin";
-        void* file_ptr = nullptr;
-        size_t size = 0;
-        if(assets.GetAssetData(blufi_bin, file_ptr, size))
-        {
-            if (esp_ota_begin(blufi_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle)) {
-                esp_ota_abort(update_handle);
-                ESP_LOGE(TAG, "Failed to begin blufi_partition OTA");
-                return;
-            }
-            auto err = esp_ota_write(update_handle, (char*)file_ptr, size);
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to write blufi_partition OTA data: %s", esp_err_to_name(err));
-                esp_ota_abort(update_handle);
-                return;
-            }
-            err = esp_ota_end(update_handle);
-            if (err != ESP_OK) {
-                if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
-                    ESP_LOGE(TAG, "Image validation failed, image is corrupted");
-                } else {
-                    ESP_LOGE(TAG, "Failed to end OTA: %s", esp_err_to_name(err));
-                }
-                return;
-            }
-            esp_ota_set_boot_partition(blufi_partition);
-            ESP_LOGI(TAG, "Switched to blufi partition, restarting...\n");
-            vTaskDelay(pdMS_TO_TICKS(300));
-            esp_restart();
-        }
-        else{
-            ESP_LOGE(TAG, "assets can not find blufi bin!!");
-        }
-    } else {
-        ESP_LOGI(TAG, "Blufi[OTA] partition not found!\n");
-    }
+    // if (blufi_partition != NULL) {
+    //     esp_ota_handle_t update_handle = 0;
+    //     auto& assets = Assets::GetInstance();
+    //     const std::string blufi_bin = "blufi_app.bin";
+    //     void* file_ptr = nullptr;
+    //     size_t size = 0;
+    //     if(assets.GetAssetData(blufi_bin, file_ptr, size))
+    //     {
+    //         if (esp_ota_begin(blufi_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle)) {
+    //             esp_ota_abort(update_handle);
+    //             ESP_LOGE(TAG, "Failed to begin blufi_partition OTA");
+    //             return;
+    //         }
+    //         auto err = esp_ota_write(update_handle, (char*)file_ptr, size);
+    //         if (err != ESP_OK) {
+    //             ESP_LOGE(TAG, "Failed to write blufi_partition OTA data: %s", esp_err_to_name(err));
+    //             esp_ota_abort(update_handle);
+    //             return;
+    //         }
+    //         err = esp_ota_end(update_handle);
+    //         if (err != ESP_OK) {
+    //             if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
+    //                 ESP_LOGE(TAG, "Image validation failed, image is corrupted");
+    //             } else {
+    //                 ESP_LOGE(TAG, "Failed to end OTA: %s", esp_err_to_name(err));
+    //             }
+    //             return;
+    //         }
+    //         esp_ota_set_boot_partition(blufi_partition);
+    //         ESP_LOGI(TAG, "Switched to blufi partition, restarting...\n");
+    //         vTaskDelay(pdMS_TO_TICKS(300));
+    //         esp_restart();
+    //     }
+    //     else{
+    //         ESP_LOGE(TAG, "assets can not find blufi bin!!");
+    //     }
+    // } else {
+    //     ESP_LOGI(TAG, "Blufi[OTA] partition not found!\n");
+    // }
+
+
+    StartBlufiMode(true);
 }

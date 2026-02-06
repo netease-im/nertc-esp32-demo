@@ -48,6 +48,20 @@ private:
     static int SendUdp(udp_handle handle, const char* data, size_t length);
     static int RecvUdp(udp_handle handle, char* buffer, size_t buffer_size);
 
+    // MQTT 实现函数
+    static mqtt_handle CreateMqtt();
+    static void DestroyMqtt(mqtt_handle handle);
+    static void SetMqttOnConnected(mqtt_handle handle, mqtt_on_connected_func callback);
+    static void SetMqttOnDisconnected(mqtt_handle handle, mqtt_on_disconnected_func callback);
+    static void SetMqttOnMessage(mqtt_handle handle, mqtt_on_message_func callback);
+    static void SetMqttOnError(mqtt_handle handle, mqtt_on_error_func callback);
+    static bool MqttConnect(mqtt_handle handle, const char* host, int port, const char* client_id, const char* username, const char* password);
+    static void MqttDisconnect(mqtt_handle handle);
+    static bool MqttIsConnected(mqtt_handle handle);
+    static bool MqttPublish(mqtt_handle handle, const char* topic, const char* payload, int qos);
+    static bool MqttSubscribe(mqtt_handle handle, const char* topic, int qos);
+    static bool MqttUnsubscribe(mqtt_handle handle, const char* topic);
+
 private:
     static NeRtcExternalNetwork* instance_;
     nertc_sdk_ext_net_handle_t handle_;
@@ -56,7 +70,7 @@ private:
     std::mutex tcp_mutex_;
     std::mutex udp_mutex_;
     std::string tcp_recv_buffer_;
-    std::list<std::string> udp_data_queue_; 
+    std::list<std::string> udp_data_queue_;
     int udp_timeout_ms_ = 5000;
 };
 

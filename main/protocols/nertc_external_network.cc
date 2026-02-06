@@ -8,6 +8,11 @@
 #define TCP_RECV_EVENT (1 << 0)
 #define UDP_RECV_EVENT (1 << 1)
 
+#define CLIENT_ID_HTTP 0
+#define CLIENT_ID_TCP 1
+#define CLIENT_ID_UDP 2
+#define CLIENT_ID_MQTT 3
+
 NeRtcExternalNetwork* NeRtcExternalNetwork::instance_ = nullptr;
 NeRtcExternalNetwork* NeRtcExternalNetwork::GetInstance() {
   if (instance_ == nullptr) {
@@ -51,7 +56,21 @@ NeRtcExternalNetwork::NeRtcExternalNetwork() {
         .connect_udp = ConnectUdp,
         .disconnect_udp = DisconnectUdp,
         .send_udp = SendUdp,
-        .recv_udp = RecvUdp
+        .recv_udp = RecvUdp,
+
+        // MQTT 函数指针
+        .create_mqtt = CreateMqtt,
+        .destroy_mqtt = DestroyMqtt,
+        .set_mqtt_on_connected = SetMqttOnConnected,
+        .set_mqtt_on_disconnected = SetMqttOnDisconnected,
+        .set_mqtt_on_message = SetMqttOnMessage,
+        .set_mqtt_on_error = SetMqttOnError,
+        .mqtt_connect = MqttConnect,
+        .mqtt_disconnect = MqttDisconnect,
+        .mqtt_is_connected = MqttIsConnected,
+        .mqtt_publish = MqttPublish,
+        .mqtt_subscribe = MqttSubscribe,
+        .mqtt_unsubscribe = MqttUnsubscribe
     };
 
     tcp_event_group_ = xEventGroupCreate();
@@ -68,7 +87,7 @@ NeRtcExternalNetwork::~NeRtcExternalNetwork() {
 // HTTP 实现
 http_handle NeRtcExternalNetwork::CreateHttp() {
     auto network = Board::GetInstance().GetNetwork();
-    auto http_unique = network->CreateHttp(0);
+    auto http_unique = network->CreateHttp(CLIENT_ID_HTTP);
     Http* http = http_unique.release();
 
     return static_cast<void*>(http);
@@ -152,7 +171,7 @@ size_t NeRtcExternalNetwork::GetHttpBody(http_handle handle, char* buffer, size_
 
 tcp_handle NeRtcExternalNetwork::CreateTcp() {
     auto network = Board::GetInstance().GetNetwork();
-    auto tcp_unique = network->CreateTcp(1);
+    auto tcp_unique = network->CreateTcp(CLIENT_ID_TCP);
     Tcp* tcp = tcp_unique.release();
 
     tcp->OnStream([](const std::string& data) {
@@ -236,7 +255,7 @@ int NeRtcExternalNetwork::RecvTcp(tcp_handle handle,
 
 udp_handle NeRtcExternalNetwork::CreateUdp() {
     auto network = Board::GetInstance().GetNetwork();
-    auto udp_unique = network->CreateUdp(2);
+    auto udp_unique = network->CreateUdp(CLIENT_ID_UDP);
     Udp* udp = udp_unique.release();
 
     udp->OnMessage([](const std::string& data) {
@@ -307,4 +326,126 @@ int NeRtcExternalNetwork::RecvUdp(udp_handle handle, char* buffer, size_t buffer
         // Timeout
         return 0;
     }
+}
+
+// MQTT 实现
+mqtt_handle NeRtcExternalNetwork::CreateMqtt() {
+    auto network = Board::GetInstance().GetNetwork();
+    auto mqtt_unique = network->CreateMqtt(CLIENT_ID_MQTT);
+    if (!mqtt_unique) {
+        ESP_LOGE(TAG, "Failed to create MQTT");
+        return nullptr;
+    }
+    Mqtt* mqtt = mqtt_unique.release();
+    return static_cast<void*>(mqtt);
+}
+
+void NeRtcExternalNetwork::DestroyMqtt(mqtt_handle handle) {
+    if (!handle)
+        return;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    delete mqtt;
+}
+
+void NeRtcExternalNetwork::SetMqttOnConnected(mqtt_handle handle,
+                                               mqtt_on_connected_func callback) {
+    if (!handle || !callback)
+        return;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    mqtt->OnConnected([handle, callback]() {
+        callback(handle);
+    });
+}
+
+void NeRtcExternalNetwork::SetMqttOnDisconnected(mqtt_handle handle,
+                                                 mqtt_on_disconnected_func callback) {
+    if (!handle || !callback)
+        return;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    mqtt->OnDisconnected([handle, callback]() {
+        callback(handle);
+    });
+}
+
+void NeRtcExternalNetwork::SetMqttOnMessage(mqtt_handle handle,
+                                             mqtt_on_message_func callback) {
+    if (!handle || !callback)
+        return;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    mqtt->OnMessage([handle, callback](const std::string& topic,
+                                       const std::string& payload) {
+        callback(handle, topic.c_str(), payload.c_str());
+    });
+}
+
+void NeRtcExternalNetwork::SetMqttOnError(mqtt_handle handle,
+                                          mqtt_on_error_func callback) {
+    if (!handle || !callback)
+        return;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    mqtt->OnError([handle, callback](const std::string& error) {
+        Mqtt* mqtt = static_cast<Mqtt*>(handle);
+        callback(handle, mqtt->GetLastError(), error.c_str());
+    });
+}
+
+bool NeRtcExternalNetwork::MqttConnect(mqtt_handle handle, const char* host,
+                                       int port, const char* client_id,
+                                       const char* username,
+                                       const char* password) {
+    if (!handle || !host || !client_id)
+        return false;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    return mqtt->Connect(std::string(host), port, std::string(client_id),
+                         std::string(username ? username : ""),
+                         std::string(password ? password : ""));
+}
+
+void NeRtcExternalNetwork::MqttDisconnect(mqtt_handle handle) {
+    if (!handle)
+        return;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    mqtt->Disconnect();
+}
+
+bool NeRtcExternalNetwork::MqttIsConnected(mqtt_handle handle) {
+    if (!handle)
+        return false;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    return mqtt->IsConnected();
+}
+
+bool NeRtcExternalNetwork::MqttPublish(mqtt_handle handle, const char* topic,
+                                       const char* payload, int qos) {
+    if (!handle || !topic || !payload)
+        return false;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    return mqtt->Publish(std::string(topic), std::string(payload), qos);
+}
+
+bool NeRtcExternalNetwork::MqttSubscribe(mqtt_handle handle, const char* topic,
+                                         int qos) {
+    if (!handle || !topic)
+        return false;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    return mqtt->Subscribe(std::string(topic), qos);
+}
+
+bool NeRtcExternalNetwork::MqttUnsubscribe(mqtt_handle handle,
+                                           const char* topic) {
+    if (!handle || !topic)
+        return false;
+
+    Mqtt* mqtt = static_cast<Mqtt*>(handle);
+    return mqtt->Unsubscribe(std::string(topic));
 }

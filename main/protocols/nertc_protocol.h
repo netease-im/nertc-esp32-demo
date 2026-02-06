@@ -62,6 +62,8 @@ private:
     static void OnAsrCaptionResult(const nertc_sdk_callback_context_t* ctx, nertc_sdk_asr_caption_result_t* results, int result_count);
     static void OnAiData(const nertc_sdk_callback_context_t* ctx, nertc_sdk_ai_data_result_t* ai_data);
     static void OnAudioData(const nertc_sdk_callback_context_t* ctx, uint64_t uid, nertc_sdk_media_stream_e stream_type, nertc_sdk_audio_encoded_frame_t* encoded_frame, bool is_mute_packet);
+    static void OnServerTime(const nertc_sdk_callback_context_t* ctx, uint64_t timestamp, uint32_t timezone_offset);
+
 private:
     EventGroupHandle_t event_group_ = nullptr;
     std::string cname_;

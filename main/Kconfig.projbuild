@@ -2,7 +2,7 @@ menu "Xiaozhi Assistant"
 
 config OTA_URL
     string "Default OTA URL"
-    default "http://vcloud-qa.netease.im/v1/device/ota"
+    default "https://nrtc.netease.im/v1/ota"
     help
         The application will access this URL to check for new firmwares and server address.
 
@@ -430,7 +430,10 @@ choice BOARD_TYPE
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_DOIT_AI_SPEAKER
         bool "Doit-AI-SPEAKER"
-        select USE_NERTC_SERVER_AEC
+#        select USE_NERTC_SERVER_AEC
+    config BOARD_TYPE_DOIT_AI_02_KIT_LCD
+        bool "Doit-AI-02-KIT-LCD"
+        depends on IDF_TARGET_ESP32C3
     config BOARD_TYPE_DOIT_ESP32S3_EYE_6824
         bool "doit-esp32s3-eye-6824"
         select ENABLE_ANIM_EMOJI
@@ -733,6 +736,11 @@ choice WAKE_WORD_TYPE
             Requires ESP32 S3 and PSRAM
 endchoice
 
+config USE_MUSIC_PLAYER
+    bool "ENABLE MUSIC PLAYER"
+    default n
+    depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4) && SPIRAM
+
 config CUSTOM_WAKE_WORD
     string "Custom Wake Word"
     default "xiao tu dou"
@@ -777,7 +785,7 @@ config USE_DEVICE_AEC
         || BOARD_TYPE_LICHUANG_DEV_S3 || BOARD_TYPE_ESP_KORVO2_V3 || BOARD_TYPE_WAVESHARE_S3_TOUCH_AMOLED_1_75 || BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_83\
         || BOARD_TYPE_WAVESHARE_S3_TOUCH_AMOLED_2_06 || BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_4B || BOARD_TYPE_WAVESHARE_P4_WIFI6_TOUCH_LCD_4B || BOARD_TYPE_WAVESHARE_P4_WIFI6_TOUCH_LCD_7B \
         || BOARD_TYPE_WAVESHARE_P4_WIFI6_TOUCH_LCD_XC || BOARD_TYPE_ESP_S3_LCD_EV_Board_2 || BOARD_TYPE_YUNLIAO_S3 \
-        || BOARD_TYPE_ECHOEAR || BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_3_49)))
+        || BOARD_TYPE_ECHOEAR || BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_3_49 || BOARD_TYPE_DOIT_AI_SPEAKER)))
     help
         To work properly, device-side AEC requires a clean output reference path from the speaker signal and physical acoustic isolation between the microphone and speaker.
 

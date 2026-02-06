@@ -122,7 +122,9 @@ void Application::DealAppStartEvent() {
 
 void Application::DealTimerEvent() {
 #ifdef CONFIG_DEBUG_RUNTIME_STATS
-    print_runtime_delta();
+    if (clock_ticks_ % 10 == 0) {
+        print_runtime_delta();
+    }
 #endif
 
     if (ai_sleep_ && (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening)) {
@@ -520,9 +522,105 @@ void Application::SetAISleep() {
     protocol_->SetAISleep();
 }
 
+void Application::ReadNertcConfig() {
+#if NERTC_ENABLE_CONFIG_FILE
+    if (!NeRtcProtocol::MountFileSystem()) {
+        ESP_LOGE(TAG, "Failed to initialize file system");
+        return;
+    }
+
+    auto* config_json = NeRtcProtocol::ReadConfigJson();
+    if(config_json) {
+        cJSON* custom_config = cJSON_GetObjectItem(config_json, "custom_config");
+        if (custom_config && cJSON_IsObject(custom_config)) {
+            cJSON* test_mode = cJSON_GetObjectItem(custom_config, "test_mode");
+            if(test_mode && cJSON_IsBool(test_mode)) {
+                enable_test_mode_ = (test_mode->valueint ? true : false);
+                ESP_LOGI(TAG, "local config set test mode to %d", enable_test_mode_ ? 1 : 0);
+            }
+        }
+        cJSON_Delete(config_json);
+    } else{
+        ESP_LOGW(TAG, "no local config file");
+    }
+#endif
+}
+
 //
 void Application::TestDestroy() {
     if (protocol_) {
         protocol_->TestDestroy();
     }
+}
+
+void Application::Close() {
+    if (device_state_ == kDeviceStateActivating) {
+        SetDeviceState(kDeviceStateIdle);
+        return;
+    }
+    SetDeviceState(kDeviceStateIdle);
+    ESP_LOGW(TAG, "Stop alarm ringing for app close");
+    StopAlarmRinging();
+
+    if (!protocol_) {
+        ESP_LOGE(TAG, "Protocol not initialized");
+        return;
+    }
+
+    Schedule([this]() {
+        protocol_->CloseAudioChannel();
+    });
+}
+
+void Application::ParseSongListFromJson(const std::string& json, std::vector<MusicInfo>& out_list, bool& play_now){
+    out_list.clear();
+    cJSON* root = cJSON_Parse(json.c_str());
+    if (!root) {
+        ESP_LOGE(TAG, "ParseSongListFromJson: Failed to parse JSON");
+        return;
+    }
+
+    cJSON* need_confirm = cJSON_GetObjectItem(root, "need_confirm");
+    if(cJSON_IsBool(need_confirm) && need_confirm->valueint == 0){
+        play_now = true;
+    }
+    auto song_list = cJSON_GetObjectItem(root, "song_list");
+    if (!cJSON_IsArray(song_list) || cJSON_GetArraySize(song_list) == 0) {
+        ESP_LOGE(TAG, "ParseSongListFromJson: 'song_list' is not an array");
+        cJSON_Delete(root);
+        return;
+    }
+    out_list.resize(cJSON_GetArraySize(song_list));
+    for (int i = 0; i < cJSON_GetArraySize(song_list); ++i) {
+        cJSON* song_item = cJSON_GetArrayItem(song_list, i);
+        if (cJSON_IsObject(song_item)) {
+            MusicInfo music_info;
+            cJSON* name = cJSON_GetObjectItem(song_item, "name");
+            cJSON* uri = cJSON_GetObjectItem(song_item, "url");
+            cJSON* album = cJSON_GetObjectItem(song_item, "album");
+            cJSON* artist = cJSON_GetObjectItem(song_item, "artist");
+            cJSON* index = cJSON_GetObjectItem(song_item, "index");
+            if(!cJSON_IsNumber(index) || index->valueint >= cJSON_GetArraySize(song_list)){
+                ESP_LOGI(TAG, "ParseSongListFromJson: invalid song index");
+                cJSON_Delete(root);
+                return;
+            }
+            if (cJSON_IsString(name)) {
+                music_info.name = name->valuestring;
+            }
+            if (cJSON_IsString(uri)) {
+                music_info.uri = uri->valuestring;
+            }
+            if (cJSON_IsString(album)) {
+                music_info.album = album->valuestring;
+            }
+            if (cJSON_IsString(artist)) {
+                music_info.artist = artist->valuestring;
+            }
+            out_list[index->valueint] = music_info;
+            ESP_LOGI(TAG, "ParseSongListFromJson: Parsed song - Name: %s, URI: %s, Album: %s, Artist: %s", 
+                     music_info.name.c_str(), music_info.uri.c_str(), music_info.album.c_str(), music_info.artist.c_str());
+        }
+    }
+    cJSON_Delete(root);
 }

@@ -200,18 +200,3 @@ std::string Ml307Board::GetDeviceStatusJson() {
     return json;
 }
 
-std::string Ml307Board::GetBoardName() {
-    Settings settings("board", true);
-    std::string name = settings.GetString("name");
-    if (name.empty()) {
-        std::string imei = modem_->GetImei();
-        if (imei.size() > 6) {
-            imei = imei.substr(imei.size() - 6);
-        }
-        name = std::string(NERTC_BOARD_NAME) + "-" + imei;
-        settings.SetString("name", name);
-    }
-    ESP_LOGI(TAG, "GetBoardName name=%s", name.c_str());
-
-    return name;
-}

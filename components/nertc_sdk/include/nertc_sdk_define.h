@@ -84,6 +84,11 @@ typedef enum {
   NERTC_SDK_LLM_IMAGE_TYPE_NETWORK_URL = 1,
 } nertc_sdk_llm_image_type_e;
 
+typedef enum {
+  NERTC_SDK_LLM_IMAGE_EXPLAIN_TYPE_AI = 0,
+  NERTC_SDK_LLM_IMAGE_EXPLAIN_TYPE_TAG = 1,
+} nertc_sdk_llm_image_explain_type_e;
+
 typedef struct nertc_sdk_licence_config {
   const char* license;  // licence
 } nertc_sdk_licence_config_t;
@@ -188,6 +193,7 @@ typedef struct nertc_sdk_start_ai_config {
   size_t start_topic_len;
 } nertc_sdk_start_ai_config_t;
 
+
 typedef struct nertc_sdk_asr_caption_config {
   /** 字幕的源语言，默认为AUTO */
   char src_language[kNERtcMaxTokenLength];
@@ -240,6 +246,8 @@ typedef struct nertc_sdk_ai_llm_request {
   int interrupt_mode;
   /** 图片类型 */
   nertc_sdk_llm_image_type_e img_type;
+  /** 图片解释类型, 0:AI回答，1:标签识图，通过on_ai_data返回photoTag类型JSON数据，此时 interrupt_mode 和 text 暂时无效 */
+  nertc_sdk_llm_image_explain_type_e img_explain_type;
 } nertc_sdk_ai_llm_request_t;
 
 typedef struct nertc_sdk_mcp_tool_result {
