@@ -48,7 +48,6 @@ void WifiBoard::EnterWifiConfigMode() {
             }
         }
     }
-    return;
 #endif
     auto& application = Application::GetInstance();
     application.SetDeviceState(kDeviceStateWifiConfiguring);

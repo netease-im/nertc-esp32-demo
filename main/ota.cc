@@ -51,6 +51,9 @@ std::string Ota::GetCheckVersionUrl() {
     auto& application = Application::GetInstance();
     if (application.GetNertcTestMode())
         url = "http://webtest.netease.im/v1/ota";
+
+    if (!application.GetAppkey().empty())
+        url += "?appkey=" + application.GetAppkey();
 #endif
     return url;
 }
@@ -86,7 +89,6 @@ esp_err_t Ota::CheckVersion() {
     ESP_LOGI(TAG, "Current version: %s", current_version_.c_str());
 
     std::string url = GetCheckVersionUrl();
-    printf("ota url = %s\n", url.c_str());
     if (url.length() < 10) {
         ESP_LOGE(TAG, "Check version URL is not properly set");
         return ESP_ERR_INVALID_ARG;

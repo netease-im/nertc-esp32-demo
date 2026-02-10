@@ -99,6 +99,7 @@ public:
 
     void ReadNertcConfig();
     bool GetNertcTestMode() const { return enable_test_mode_; }
+    std::string GetAppkey() const { return appkey_; }
     //
     void TestDestroy();
 #endif
@@ -166,6 +167,7 @@ private:
     // ai sleep
     bool ai_sleep_ = false;
     bool enable_test_mode_ = false;
+    std::string appkey_;
 #endif
 };
 

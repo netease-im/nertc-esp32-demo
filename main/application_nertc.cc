@@ -539,6 +539,10 @@ void Application::ReadNertcConfig() {
                 ESP_LOGI(TAG, "local config set test mode to %d", enable_test_mode_ ? 1 : 0);
             }
         }
+        cJSON* appkey_json = cJSON_GetObjectItem(config_json, "appkey");
+        if (appkey_json && cJSON_IsString(appkey_json)) {
+            appkey_ = appkey_json->valuestring;
+        }
         cJSON_Delete(config_json);
     } else{
         ESP_LOGW(TAG, "no local config file");
